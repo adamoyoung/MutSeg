@@ -1,0 +1,7 @@
+- enable multiple mutations at a single position (from different cancers of course)
+- enforce the idea that segments cannot cross chromosomes
+- add length penalty to the segments
+- deal with the boundaries between segments (median? some other form?)
+- separate males and females, train classifier
+- is the minimum size based on the number of mutations, or the number of mutation positions?
+- figure out how to do fractional mutations (maybe represent only the numerator in uint8?)
