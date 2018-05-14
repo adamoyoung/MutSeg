@@ -49,7 +49,8 @@ def k_seg(muts, K, min_size, seed, data_file_name):
 	# final results for each k: save on disk (approx 0.32 GB)
 	E_f = t_group.require_dataset("E_f", (K,), dtype=float_t)
 	# working set: keep in memory (approx 0.64 GB)
-	E_s = np.full([M,2], np.nan, dtype=float_t)
+	E_w = np.full([M,2], np.nan, dtype=float_t)
+	S_w = np.zeros([M,2], dtype=np.uint32)
 
 	C = compute_counts(muts, M, T)
 	M_total = np.sum(muts)
@@ -58,32 +59,39 @@ def k_seg(muts, K, min_size, seed, data_file_name):
 
 	print( "k == 0" )
 	for i in range(0,M):
+		if (i % 1000000) == 0:
+			print( "iter {}".format(i) )
 		if i+1 < min_size:
-			E_s[i,0] = ninf
+			E_w[i,0] = ninf
 		else:
-			E_s[i,0] = score(0,i+1,C,M_total,seed)
-			S_s[i,0] = 0
-	E_f[0] = E_s[M-1,0]
+			E_w[i,0] = score(0,i+1,C,M_total,seed)
+			S_w[i,0] = 0
+	E_f[0] = E_w[M-1,0]
+	S_s[:,0] = S_w[:,0] # should be all zeros
 
-	temp_scores = np.zeros([M], dtype=float_t)
-	temp_seqs = np.zeros([M], dtype=np.int32)
 	# array that converts k to an index (0 or 1) in the working set array
-	E_inds = np.zeros([K], dtype=np.uint8)
-	E_inds[0] = 0
+	I_w = np.zeros([K], dtype=np.uint8)
+	I_w[0] = 0
 
 	for k in range(1,K): #  1 <= k <= 9
 		print( "k == {}".format(k) )
-		E_inds[k] = 1 - E_inds[k-1]
+		I_w[k] = 1 - I_w[k-1]
 		for i in range(k,M): # 1 <= i <= 9
+			if (i % 1000000) == 0:
+				print( "iter {}".format(i) )
+			max_score, max_seq = ninf, 0
 			for j in range(k,i+1): # 1 <= j <= 9
 				if i-(j-1) < min_size:
-					temp_scores[j-1:i] = np.full([i-(j-1)], ninf, dtype=float_t)
 					break
-				temp_scores[j-1] = E_s[j-1,E_inds[k-1]] + score(j,i+1,C,M_total,seed)
-				temp_seqs[j-1] = j-1
-			E_s[i,E_inds[k]] = np.max(temp_scores[k-1:i])
-			S_s[i,k] = temp_seqs[k-1+np.argmax(temp_scores[k-1:i])]
-		E_f[k] = E_s[M-1,E_inds[k]]
+				temp_score = E_w[j-1,I_w[k-1]] + score(j,i+1,C,M_total,seed)
+				if temp_score > max_score:
+					max_score = temp_score
+					max_seq = j-1
+			E_w[i,I_w[k]] = max_score
+			S_w[i,I_w[k]] = max_seq
+		# push modifications onto disk
+		E_f[k] = E_w[M-1,I_w[k]]
+		S_s[:,k] = S_w[:,I_w[k]]
 			
 	#print(t_group.get("E_f")[:])
 	#print(t_group.get("S_s")[:])
@@ -181,7 +189,7 @@ if __name__ == "__main__":
 
 	muts = np.zeros([M,T],dtype=np.int8)
 	screen = np.random.choice([3,4,7], size=[M])
-	#screen = np.array([3,3,3,3,7,7,4,4,4,4])
+	#screen = np.array([7,7,4,3,7,7,3,4,3,3])
 	#print(screen)
 	muts[:,0] += screen % 2
 	muts[:,1] += screen % 3
