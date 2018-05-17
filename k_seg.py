@@ -1,11 +1,14 @@
 import sys
 import numpy as np
 import itertools
+import random
+import ctypes
 
-float_t = np.float32
-eps = np.finfo(float_t).eps # 2.2e-16
+float_t = np.float64
+eps = np.finfo(float_t).eps # 2.2e-16 if float_t is 64-bit
 ninf = -np.inf
 np.random.seed(303)
+random.seed(303)
 
 def compute_counts(muts, M, T):
 	# assumes that muts is a [M,T] binary array
@@ -142,7 +145,6 @@ def brute_force(muts, pos, T, K, min_size=1, seed=[]):
 	return best_score, best_partition
 
 
-
 # def main(argc, argv):
 
 # 	if argc != 3 or int(argv[1]) > 0:
@@ -155,18 +157,24 @@ if __name__ == "__main__":
 	# 	print("Usage: k_seg k (k is an int > 0)")
 	# main(len(sys.argv), sys.argv)
 
-	T = 2
-	K = 4
 	M = 10
-	min_size = 1
-	seed = [] #[2, 6] # up until 2, up until 6
+	T = 3
+	K = 4
+	min_size = 2
+	seed = [] # [2, 6] # up until 2, up until 6
+	filename = "test_data_file"
 
-	muts = np.zeros([M,T],dtype=np.int8)
-	screen = np.random.choice([3,4,7], size=[M])
-	#screen = np.array([3,3,3,3,7,7,4,4,4,4])
-	#print(screen)
-	muts[:,0] += screen % 2
-	muts[:,1] += screen % 3
+	muts = np.zeros([M,T],dtype=np.float64)
+	crandlib = ctypes.CDLL("/home/adamo/Documents/MutSeg/crandlib.so")
+	crandlib.seed(303)
+	for i in range(M):
+		num_muts = 1 + (crandlib.randint() % T)
+		offset = crandlib.randint() % T
+		for j in range(num_muts):
+			mut_ptr = (offset + j) % T
+			assert(mut_ptr < T)
+			muts[ i, mut_ptr ] = 1.
+
 	#print(muts)
 	pos = [] # [2, 5, 6, 33, 40, 45, 47, 55, 57, 88]
 	bf_results = brute_force(muts,pos,T,K,min_size,seed)

@@ -2,11 +2,13 @@ import sys
 import numpy as np
 import itertools
 import h5py
+import random
 
 float_t = np.float64
 eps = np.finfo(float_t).eps # 2.2e-16
 ninf = -np.inf
 np.random.seed(303)
+random.seed(303)
 
 def compute_counts(muts, M, T):
 	# assumes that muts is a [M,T] binary array
@@ -180,19 +182,22 @@ if __name__ == "__main__":
 	# 	print("Usage: k_seg k (k is an int > 0)")
 	# main(len(sys.argv), sys.argv)
 
+	M = 100
 	T = 2
-	K = 4
-	M = 10
+	K = 10
 	min_size = 1
 	seed = [] # [2, 6] # up until 2, up until 6
 	filename = "test_data_file"
 
 	muts = np.zeros([M,T],dtype=np.int8)
-	screen = np.random.choice([3,4,7], size=[M])
-	#screen = np.array([7,7,4,3,7,7,3,4,3,3])
-	#print(screen)
-	muts[:,0] += screen % 2
-	muts[:,1] += screen % 3
+	for i in range(M):
+		num_muts = 1 + random.randint(0,T)
+		offset = random.randint(0,T)
+		for j in range(num_muts):
+			mut_ptr = (offset + j) % T
+			assert(mut_ptr < T)
+			muts[ i, mut_ptr ] = 1.
+	
 	#print(muts)
 	#pos = [] # [2, 5, 6, 33, 40, 45, 47, 55, 57, 88]
 	bf_results = brute_force(muts,T,K,min_size,seed)
