@@ -72,7 +72,7 @@ def k_seg(muts, pos, K, min_size=1, seed=[]):
 			S_s[i,k] = temp_seqs[k-1+np.argmax(temp_scores[k-1:i])]
 			
 	#print(E_s)
-	#print(S_s)
+	print(S_s.T)
 
 	final_score = E_s[M-1,K-1]
 	
@@ -158,9 +158,9 @@ if __name__ == "__main__":
 	# main(len(sys.argv), sys.argv)
 
 	M = 10
-	T = 3
+	T = 2
 	K = 4
-	min_size = 2
+	min_size = 1
 	seed = [] # [2, 6] # up until 2, up until 6
 	filename = "test_data_file"
 
@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
 	#print(muts)
 	pos = [] # [2, 5, 6, 33, 40, 45, 47, 55, 57, 88]
-	bf_results = brute_force(muts,pos,T,K,min_size,seed)
-	print( "BF:\nscore = {}\npositions = {}".format(bf_results[0], bf_results[1]) )
+	# bf_results = brute_force(muts,pos,T,K,min_size,seed)
+	# print( "BF:\nscore = {}\npositions = {}".format(bf_results[0], bf_results[1]) )
 	dp_results = k_seg(muts,pos,K,min_size,seed)
 	print( "DP:\nscore = {}\npositions = {}".format(dp_results[0], dp_results[1]) )
