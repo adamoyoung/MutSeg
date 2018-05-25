@@ -144,6 +144,7 @@ def brute_force(muts, pos, T, K, min_size=1, seed=[]):
 
 	return best_score, best_partition
 
+"""================================================"""
 
 # def main(argc, argv):
 

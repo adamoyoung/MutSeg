@@ -1,0 +1,4 @@
+compare mutual information (optimal vs naive)
+figure
+compare sexes
+correlation of mutation rates across segments (optimal vs naive)
