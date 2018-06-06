@@ -7,18 +7,29 @@ int main(int argc, char *argv[]) {
 	// argv[4] == T
 	// argv[5] == K
 	// argv[6] == mp
+	// argv[7] == E_f file name
+	// argv[8] == S_s file name
 
-	if (argc != 7) {
+	if (argc != 9) {
 		printf("Error: usage\n");
 		return -1;
 	}
 
+	// get commandline arguments
 	int quick_test = atoi(argv[1]);
 	char *muts_file_name = argv[2];
 	int M = atoi(argv[3]);
 	int T = atoi(argv[4]);
 	int K = atoi(argv[5]);
 	int mp = atoi(argv[6]);
+	char *E_f_file_name = argv[7];
+	char *S_s_file_name = argv[8];
+
+	// these are not passed as arguments... for now
+	int min_size = 1;
+	int seeds[10];
+	int num_seeds = 0;
+
 	double *muts = calloc( M*T, sizeof(double) );
 	if (!muts) {
 		perror("muts calloc");
@@ -57,13 +68,6 @@ int main(int argc, char *argv[]) {
 		}
 
 	}
-	
-	// these are not passed as arguments... for now
-	int min_size = 1;
-	int seeds[10];
-	int num_seeds = 0;
-	char *E_f_file_name = "E_f_file.dat";
-	char *S_s_file_name = "S_s_file.dat";
 
 	double final_score;
 	int ret_val;

@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <omp.h>
-#include <sys/sysinfo.h>
+//#include <sys/sysinfo.h>
 
 #define EPS 2.2204460492503131e-16
 #define MAX_UINT32 4294967295

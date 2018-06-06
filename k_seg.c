@@ -217,9 +217,8 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 	I_w[0] = 0;
 	E_f[0] = E_w[ 0*M+(M-1) ];
 
-	int nthreads = get_nprocs();
 	if (mp) {
-		printf("Using %d threads\n\n", nthreads);
+		printf("Using %d threads\n\n", mp);
 	}
 
 	for (int k = 1; k < K; k++) {
@@ -229,7 +228,7 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 		//printf("I_w[%d] = %d\n", k, I_w[k]);
 		
 		if (mp) {
-			#pragma omp parallel for num_threads(nthreads)
+			#pragma omp parallel for num_threads(mp)
 			for (int i = k; i < M; i++) {
 				// if (i % 1000 == 0) {
 				// 	printf("%d,", i);
