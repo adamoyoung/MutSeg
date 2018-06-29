@@ -1,9 +1,13 @@
 #!/bin/bash
 
-for i in `seq 0 2`
+for m in `seq 0 1`
 do
-	for j in `seq 1 22`
+	# set to `seq 0 5` if you want to include an "all" run
+	for f in `seq 0 4`
 	do
-		./seg.sh $j $i
+		for c in `seq 1 22`
+		do
+			./seg.sh $c $m $f
+		done
 	done
 done

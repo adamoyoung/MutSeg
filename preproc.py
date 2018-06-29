@@ -5,20 +5,25 @@ from convert_to_C import convert
 
 # argv[1]: input file
 # argv[2]: output file
-# argv[3]: mode
+# argv[3]: group_by
 
+np.random.seed(373)
+np.set_printoptions(threshold=1000)
 float_t = np.float64
 NUM_CHRMS = 22 # does not include the X chromosome or Y chromosome
+#CHRM_LENS = [ 248956422,242193529,198295559,190214555,181538259,170805979,159345973,145138636,138394717,133797422,135086622,133275309,114364328,107043718,101991189,90338345,83257441,80373285,58617616,64444167,46709983,50818468] #,57227415 ]
+CHRM_LENS = [ 249250621, 243199373, 198022430, 191154276, 180915260, 171115067, 159138663, 146364022, 141213431, 135534747, 135006516, 133851895, 115169878, 107349540, 102531392, 90354753, 81195210, 78077248, 59128983, 63025520, 48129895, 51304566 ]
+sex_to_ind = {"m": 0, "M": 0, "male": 0, "f": 1, "F": 1, "female": 1, "b": 2, "both": 2}
 
-def preproc(file_name, group_by=1, mut_sex='both'):
+def preproc(file_name, group_by=1, num_folds=5):
 
 	num_chrms = NUM_CHRMS
 
 	beg_time = time.clock_gettime(time.CLOCK_MONOTONIC)
-	print("[0] starting preproc, file = {}, group_by = {}, mut_sex = {}".format(file_name,group_by,mut_sex) )
+	print("[0] starting preproc, file = {}, group_by = {}, num_folds = {}".format(file_name,group_by,num_folds) )
 
 	mut_pos = [set() for i in range(num_chrms)]
-	mut_tups = [[] for i in range(num_chrms)]
+	mut_tups = []
 	typs_set = set()
 
 	file = open(file_name, 'r')
@@ -30,12 +35,17 @@ def preproc(file_name, group_by=1, mut_sex='both'):
 	line_count = 1
 	while line != '':
 		line = line.split(",")
-		if len(line) < 2:
-			line = file.readline()
-			continue
-		chrm, pos, dens, typ, sex = line[1], line[2], line[8], line[9], line[10].strip()
-		assert( "chr" != "X" )
-		if chrm == "chr" or chrm == "Y" or (mut_sex == "male" and sex != "M") or (mut_sex == "female" and sex != "F"):
+		#assert(len(line) == 12)
+		if len(line) != 12:
+			print(line_count)
+			print(line)
+			quit()
+		# if len(line) < 2:
+		# 	line = file.readline()
+		# 	continue
+		chrm, pos, dens, typ, sex = line[2], line[3], line[7], line[10], line[11].strip()
+		assert( chrm != "X" )
+		if chrm == "chr" or chrm == "Y":
 			line = file.readline()
 			line_count += 1
 			continue
@@ -47,11 +57,11 @@ def preproc(file_name, group_by=1, mut_sex='both'):
 		# 	chrm = 22
 		else:
 			chrm = int(chrm)-1
-		pos, dens = int(pos)-1, float(line[8])
+		pos, dens = int(pos)-1, float(dens)
 		assert( chrm >= 0 and chrm < num_chrms )
 		assert( sex == "M" or sex == "F")
 		mut_pos[chrm].add( pos )
-		mut_tups[chrm].append( (pos,typ,dens) )
+		mut_tups.append( (chrm,pos,typ,dens,sex) )
 		typs_set.add( typ )
 		line = file.readline()
 		line_count += 1
@@ -89,46 +99,66 @@ def preproc(file_name, group_by=1, mut_sex='both'):
 	cur_time = time.clock_gettime(time.CLOCK_MONOTONIC)
 	print( "[{0:.0f}] created the typ_to_ind dictionary".format(cur_time-beg_time) )
 
-	print( "final array dimensions: [ {} x {} ]".format( comb_mut_pos_size, len(typs_list) ) )
-	final_array = np.zeros([comb_mut_pos_size, len(typs_list)], dtype=float_t)
-	print( "final array size: {}".format(sys.getsizeof(final_array) / 1000000) )
 
-	for i in range(num_chrms):
-		print( "starting mut_tups {}".format(i) )
-		for j in range(len(mut_tups[i])):
-			pos, typ, dens = mut_tups[i][j]
-			assert( type(pos) == int and type(typ) == str and type(dens) == float )
+	print( "final array dimensions: [ {} x {} x {} ]".format( num_folds, comb_mut_pos_size, len(typs_list) ) )
+	final_array = np.zeros([num_folds, comb_mut_pos_size, len(typs_list)], dtype=float_t)
+	print( "final array size: {} MB".format(sys.getsizeof(final_array) // 1000000) )
+
+	num_data_pts = len(mut_tups)
+	indices = np.arange(num_data_pts)
+	np.random.shuffle(indices)
+	part_size = num_data_pts // num_folds
+	parts = [ (i*part_size, (i+1)*part_size) for i in range(num_folds-1) ] + [ ((num_folds-1)*part_size, num_data_pts) ]
+
+	for p in range(len(parts)):
+		for i in range(parts[p][0],parts[p][1]):
+			chrm, pos, typ, dens, sex = mut_tups[indices[i]]
+			fold = p
 			typ_ind = typ_to_ind[typ]
-			pos_ind = abs_to_relative[i][pos]
-			final_array[pos_ind][typ_ind] = dens
+			pos_ind = abs_to_relative[chrm][pos]
+			final_array[fold][pos_ind][typ_ind] = dens
+
+	# for i in range(num_chrms):
+	# 	print( "starting chrm {} mut_tups".format(i+1) )
+	# 	for j in range(len(mut_tups[i])):
+	# 		fold = get_fold(i,j)
+	# 		assert( fold >= 0 )
+	# 		chrm, pos, typ, dens, sex = mut_tups[i][j]
+	# 		assert( type(pos) == int and type(typ) == str and type(dens) == float and type(sex) == str)
+	# 		typ_ind = typ_to_ind[typ]
+	# 		pos_ind = abs_to_relative[i][pos]
+	# 		final_array[fold][pos_ind][typ_ind] = dens
 
 	cur_time = time.clock_gettime(time.CLOCK_MONOTONIC)
 	print( "[{0:.0f}] final_array is complete".format(cur_time-beg_time) )
 
-	assert( np.sum(final_array, axis=1).all() )
+	assert( np.sum(final_array, axis=(0,2)).all() )
 
 	# group into groups the size of group_by
 	# note that any mutations at the end that are not in a group of size group_by are discarded
 	# also note that the mut_pos_g array is [beg_pt, end_pt] inclusive
 	mut_pos_g_sizes = [mut_pos[i].size // group_by for i in range(num_chrms)]
-	final_array_g = np.zeros([np.sum(mut_pos_g_sizes),len(typs_list)], dtype=float_t)
+	final_array_g = np.zeros([num_folds,np.sum(mut_pos_g_sizes),len(typs_list)], dtype=float_t)
 	mut_pos_g = [np.zeros([mut_pos_g_sizes[i],2], dtype=np.int) for i in range(num_chrms)]
 	for i in range(num_chrms):
-		print( "g arrays: starting chrm {}".format(i) )
+		print( "g arrays: starting chrm {}".format(i+1) )
 		prev = sum(mut_pos_g_sizes[0:i])
 		for j in range(mut_pos_g_sizes[i]-1):
-			final_array_g[prev + j] = np.sum(final_array[ prev + j*group_by : prev + (j+1)*group_by ], axis=0)
-			if np.sum(final_array_g[prev + j]) == 0.:
-				print("final_g_array[{}]".format(j))
+			final_array_g[:,prev+j] = np.sum(final_array[:,prev + j*group_by : prev + (j+1)*group_by], axis=1)
+			# final_array_g[0][prev + j] = np.sum(final_array[0][ prev + j*group_by : prev + (j+1)*group_by ], axis=0)
+			# final_array_g[1][prev + j] = np.sum(final_array[1][ prev + j*group_by : prev + (j+1)*group_by ], axis=0)
+			# final_array_g[2][prev + j] = np.sum(final_array[2][ prev + j*group_by : prev + (j+1)*group_by ], axis=0)
 			mut_pos_g[i][j][0] = mut_pos[i][ j*group_by ]
 			mut_pos_g[i][j][1] = mut_pos[i][ (j+1)*group_by-1 ]
 		last = mut_pos_g_sizes[i]-1
-		final_array_g[prev + last] = np.sum(final_array[ prev + last*group_by : prev + (last+1)*group_by ], axis=0)
+		final_array_g[:,prev+last] = np.sum(final_array[:,prev + last*group_by : prev + (last+1)*group_by], axis=1)
+		# final_array_g[0][prev + last] = np.sum(final_array[0][ prev + last*group_by : prev + (last+1)*group_by ], axis=0)
+		# final_array_g[1][prev + last] = np.sum(final_array[1][ prev + last*group_by : prev + (last+1)*group_by ], axis=0)
+		# final_array_g[2][prev + last] = np.sum(final_array[2][ prev + last*group_by : prev + (last+1)*group_by ], axis=0)
 		mut_pos_g[i][last][0] = mut_pos[i][ last*group_by ]
 		mut_pos_g[i][last][1] = mut_pos[i][ (last+1)*group_by-1 ]
 
-	#print( "Every position has at least one mutation? {}".format(np.sum(final_array_g, axis=1).all()) )
-	assert( np.sum(final_array_g, axis=1).all() )
+	assert( np.sum(final_array_g, axis=(0,2)).all() )
 
 	cur_time = time.clock_gettime(time.CLOCK_MONOTONIC)
 	print( "[{0:.0f}] final_array_g and mut_g_array are complete".format(cur_time-beg_time) )
@@ -141,27 +171,40 @@ def preproc(file_name, group_by=1, mut_sex='both'):
 	cur_time = time.clock_gettime(time.CLOCK_MONOTONIC)
 	print( "[{0:.0f}] chrm_begs is complete".format(cur_time-beg_time) )
 
-	return final_array_g, mut_pos_g, chrm_begs
+	return final_array_g, mut_pos_g, chrm_begs, typs_list
 
 if __name__ == "__main__":
 
-	if len(sys.argv) != 4:
-		print("Usage: python3 preproc.py [ src file (.txt) ] [ dest file (.npy) ] [ group by ]")
+	if len(sys.argv) != 5:
+		print("Usage: python3 preproc.py [ src file (.txt) ] [ dest file (.npy) ] [ group by ] [ num folds ]")
 		exit(1)
 	csv_file_name = sys.argv[1]
 	mc_data_file_name = sys.argv[2]
 	group_by = int(sys.argv[3])
-	m_array,m_mut_pos,m_chrm_begs = preproc(csv_file_name, group_by, "male")
-	f_array,f_mut_pos,f_chrm_begs = preproc(csv_file_name, group_by, "female")
-	b_array,b_mut_pos,b_chrm_begs = preproc(csv_file_name, group_by, "both")
-	np.savez(mc_data_file_name + "_m", array=m_array, mut_pos=m_mut_pos, chrm_begs=m_chrm_begs)
-	np.savez(mc_data_file_name + "_f", array=f_array, mut_pos=f_mut_pos, chrm_begs=f_chrm_begs)
-	np.savez(mc_data_file_name + "_b", array=b_array, mut_pos=b_mut_pos, chrm_begs=b_chrm_begs)
-	m_mc_data = {"array": m_array, "mut_pos": m_mut_pos, "chrm_begs":  m_chrm_begs}
-	f_mc_data = {"array": f_array, "mut_pos": f_mut_pos, "chrm_begs":  f_chrm_begs}
-	b_mc_data = {"array": b_array, "mut_pos": b_mut_pos, "chrm_begs":  b_chrm_begs}
-	cfile_core_name = "data/mc_chrms/mc_100"
-	for i in range(NUM_CHRMS):
-		convert(m_mc_data, i, cfile_core_name + "_m")
-		convert(f_mc_data, i, cfile_core_name + "_f")
-		convert(b_mc_data, i, cfile_core_name + "_b")
+	num_folds = int(sys.argv[4])
+	array, mut_pos, chrm_begs, typs_list = preproc(csv_file_name, group_by, num_folds)
+	np.savez(mc_data_file_name, array=array, mut_pos=mut_pos, chrm_begs=chrm_begs, typs_list=typs_list, chrm_lens=CHRM_LENS, float_t=[float_t], sex_to_ind=[sex_to_ind])
+	# mc_data = np.load(mc_data_file_name)
+	# array = mc_data["array"]
+	# mut_pos = mc_data["mut_pos"]
+	# chrm_begs = mc_data["chrm_begs"]
+	# typs_list = mc_data["typs_list"]
+	folds = [n for n in range(num_folds)]
+	for n in range(num_folds):
+		train_folds = folds[:n] + folds[n+1:]
+		valid_fold = n
+		print("train folds = {}, valid fold = [{}]".format(train_folds,valid_fold))
+		train_array = np.sum([array[f] for f in train_folds], axis=0)
+		# m_mc_data = {"array": train_arrays[0], "mut_pos": mut_pos, "chrm_begs":  chrm_begs, "typs_list": typs_list}
+		# f_mc_data = {"array": train_arrays[1], "mut_pos": mut_pos, "chrm_begs":  chrm_begs, "typs_list": typs_list}
+		data = {"array": train_array, "mut_pos": mut_pos, "chrm_begs":  chrm_begs, "typs_list": typs_list}
+		cfile_core_name = "data/mc_chrms/mc_100"
+		for c in range(NUM_CHRMS):
+			# convert(m_mc_data, c, cfile_core_name + "_m")
+			# convert(f_mc_data, c, cfile_core_name + "_f")
+			convert(data, c, "{}_fold_{}_chrm_{}.dat".format(cfile_core_name,n,c+1))
+
+	# also do one with no folds
+	data = {"array": np.sum(array, axis=0), "mut_pos": mut_pos, "chrm_begs":  chrm_begs, "typs_list": typs_list}
+	for c in range(NUM_CHRMS):
+		convert(data, c, "{}_all_chrm_{}.dat".format(cfile_core_name,c+1))

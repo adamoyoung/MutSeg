@@ -9,7 +9,7 @@
 
 #define EPS 2.2204460492503131e-16
 #define MAX_UINT32 4294967295
-#define W 500
+#define W 1000
 
 int compute_counts(double *muts, int M, int T, double **C_ptr);
 
