@@ -186,18 +186,33 @@ def classify_segs(mc_data, b_data):
 	for i in range(num_chrms):
 		print( "chrm {}: Ks = {}, good_Ks = {}, %_good_Ks = {}".format(i+1,Ks[i],len(seg_inds[i]),len(seg_inds[i])/Ks[i]) )
 
-def print_gurnit(mc_data, b_data, csv_file_name):
+def print_gurnit_2(mc_data, b_data, csv_file_name):
 
 	chrm_begs = mc_data["chrm_begs"]
 	num_chrms = chrm_begs.shape[0]
 
-	bounds = b_data["bounds"][2]
+	bp_bounds = b_data["bp_bounds"]
 	Ks = b_data["Ks"]
+	k_modes =["n", "l"]
+	assert(Ks.shape[0] <= len(k_modes))
 
-	with open(csv_file_name, 'w') as csv_file:
-		for i in range(num_chrms):
-			for j in range(Ks[i]):
-				print( "{},{},{},{}".format(i+1,j,bounds[i][j],bounds[i][j+1]) , file=csv_file)
+	for k_mode in range(Ks.shape[0]):
+		print(k_mode)
+		k_mode_file_name = csv_file_name + "_" + str(k_modes[k_mode]) + ".csv"
+		with open(k_mode_file_name, 'w') as k_mode_file:
+			for c in range(num_chrms):
+				for k in range(Ks[k_mode][c]):
+					print( "{},{},{},{}".format(c+1,k,bp_bounds[k_mode][-1][c][k],bp_bounds[k_mode][-1][c][k+1]) , file=k_mode_file)
+
+
+	print("naive")
+	naive_file_name = csv_file_name + "_naive.csv"
+	_, __, naive_bp_bounds, naive_Ks = naive_traceback(mc_data,SEG_SIZE)
+	with open(naive_file_name, 'w') as naive_file:
+		for c in range(num_chrms):
+			for k in range(naive_Ks[c]):
+				print( "{},{},{},{}".format(c+1,k,naive_bp_bounds[c][k],naive_bp_bounds[c][k+1]) , file=naive_file)
+
 
 def calculate_entropy_of_T(mc_data):
 
@@ -456,8 +471,8 @@ def convert_dat_to_npz_2(dat_dir, mc_data, bound_file_name, validation=False, cu
 	""" 
 	For when there are (potentially) multiple folds and (potentially) multiple ways of dividing the Ks.
 	Assumes that splitting by sex is not a thing
-	set total_K =  None when you want to compare length mode (l) with mutation intensity mode (n)
-	set num_folds = None when you want to get data for a segmentation that uses all of the training data
+	set custom_K = None when you want to compare length mode (l) with mutation intensity mode (n)
+	set validation = None when you want to get data for a segmentation that uses all of the training data
 	"""
 
 	chrm_begs = mc_data["chrm_begs"]
@@ -533,14 +548,12 @@ def compute_conditional_mutual_info(array,chrm_begs,ints,Ks):
 	float_t = array.dtype
 	eps = np.finfo(float_t).eps
 
-	# mut_ints = np.zeros([num_chrms,np.max(Ks),T], dtype=float_t)
-	# for c in range(num_chrms):
-	# 	for k in range(Ks[c]):
-	# 		temp = np.sum(array[ chrm_begs[c] + bounds[c,k] : chrm_begs[c] + bounds[c,k+1] ], axis=0)
-	# 		mut_ints[c,k] = temp
 	M_c = np.sum(ints,axis=(1,2))
 	P_of_C = M_c / np.sum(ints)
 	H_of_T_given_C = - np.sum( (np.sum(ints, axis=1) / np.reshape(M_c,[num_chrms,1])) * np.log(np.sum(ints, axis=1) / np.reshape(M_c,[num_chrms,1]) + eps), axis=1 )
+	#print(P_of_C)
+	#print(H_of_T_given_C)
+	print(nats_to_bits(np.sum(H_of_T_given_C * P_of_C)))
 	H_of_S_and_T_given_C = - np.sum( (ints/np.reshape(M_c,[num_chrms,1,1]) ) * np.log(ints / np.reshape(M_c,[num_chrms,1,1]) + eps), axis=(1,2) )
 	H_of_S_given_C = - np.sum( ( np.sum(ints,axis=2)/np.reshape(M_c,[num_chrms,1]) ) * np.log(np.sum(ints,axis=2)/np.reshape(M_c,[num_chrms,1]) + eps), axis=1 )
 	information_C = H_of_T_given_C + H_of_S_given_C - H_of_S_and_T_given_C
@@ -653,23 +666,27 @@ def naive_traceback(mc_data,seg_size):
 		chrm_mut_pos = mut_pos[c]
 		for k in range(Ks[c]):
 			prev_ind = cur_ind
-			#beg_pt = bp_bounds[c,k]
 			end_pt = bp_bounds[c,k+1]
-			#assert(chrm_mut_pos[cur_ind][0] >= beg_pt)
 			while cur_ind < chrm_mut_pos.shape[0] and chrm_mut_pos[cur_ind][1] < end_pt:
 				cur_ind += 1
 			if cur_ind < chrm_mut_pos.shape[0] and chrm_mut_pos[cur_ind][0] < end_pt and chrm_mut_pos[cur_ind][1] >= end_pt:
 				# mutation is saddling boundaries
 				saddle_mut_count += 1
 				if end_pt - chrm_mut_pos[cur_ind][0] > chrm_mut_pos[cur_ind][1] - end_pt + 1:
-					# mutation overlaps more with current segment
+					# mutation overlaps more with current segment, add it to the current mut_ints
 					cur_ind += 1
 			if prev_ind != cur_ind:
-				mut_ints[c,k] = np.sum(array[prev_ind:cur_ind], axis=0)
-			else:
+				mut_ints[c,k] = np.sum(array[chrm_begs[c]+prev_ind:chrm_begs[c]+cur_ind], axis=0)
+			else: # prev_ind == cur_ind
+				# there are no mutations in this segment
 				mut_ints[c,k] = np.zeros([T],dtype=float_t)
 			mut_bounds[c,k+1] = cur_ind
-	print(saddle_mut_count)
+	#print(saddle_mut_count)
+	# thing1 = np.sum(mut_ints, axis=(1,2))
+	# thing2 = [np.sum(array[chrm_begs[i]:chrm_begs[i+1]]) for i in range(len(chrm_begs)-1)] + [np.sum(array[chrm_begs[-1]:])]
+	# print(np.sum(mut_ints))
+	# print(np.sum(array))
+	assert( np.sum(mut_ints).astype(np.int) == np.sum(array).astype(np.int) ) 
 
 	return mut_ints, mut_bounds, bp_bounds, Ks
 
@@ -738,10 +755,11 @@ def get_seg(pos, chrm_bounds):
 
 	return seg
 
-
 def update_mc_file(mc_data,b_data,naive_bp_bounds,naive_Ks,mc_file_path):
 
-	""" adds two new columns to mc_file (assuming it's a csv):
+	"""
+	DEPRECATED 
+	adds two new columns to mc_file (assuming it's a csv):
 	1 - optimal length-based K
 	2 - optimal num of mutation-based K
 	3 - naive
@@ -882,7 +900,7 @@ def extract_features(mc_data,b_data,mc_raw_dir):
 	entry_count = 0
 	file_count = 0
 	entries = sorted(os.listdir(mc_raw_dir))
-	print(len(entries))
+	#print(len(entries))
 	for entry in entries:
 		entry_path = os.path.join(mc_raw_dir,entry)
 		if os.path.isfile( entry_path ):
@@ -897,7 +915,7 @@ def extract_features(mc_data,b_data,mc_raw_dir):
 
 if __name__ == "__main__":
 
-	# dat_dir = "./results/jun_25"
+	# dat_dir = "./results/july_17"
 	# mc_data_file_name = "data/mc_100.npz"
 	# mc_data = np.load(mc_data_file_name)
 	# total_K = 2897
@@ -924,13 +942,25 @@ if __name__ == "__main__":
 	# print(np.std(fold_mutual_infos,axis=1))
 	# print(total_mutual_infos)
 
-	#opt_vs_naive_information_2(mc_data,b_data)
+	print("counts")
+	mc_data_file_name = "data/mc_100.npz"
+	mc_data = np.load(mc_data_file_name)
+	bound_file_name = "results/b_100.npz"
+	b_data = np.load(bound_file_name)
+	opt_vs_naive_information_2(mc_data,b_data)
 
-	mc_data = np.load("/home/q/qmorris/youngad2/data/mc_100.npz")
-	b_data = np.load("/home/q/qmorris/youngad2/data/b_100.npz")
-	mc_raw_dir = "/scratch/q/qmorris/youngad2/new_pcawg3"
-	extract_features(mc_data,b_data,mc_raw_dir)
+	print("freqs")
+	mc_data_file_name = "data/mc_100_f.npz"
+	mc_data = np.load(mc_data_file_name)
+	bound_file_name = "results/b_100_f.npz"
+	b_data = np.load(bound_file_name)
+	opt_vs_naive_information_2(mc_data,b_data)
 
+	#mc_data = np.load("/home/q/qmorris/youngad2/data/mc_100_f.npz")
+	#b_data = np.load("/home/q/qmorris/youngad2/data/b_100_f.npz")
+	#mc_raw_dir = "/scratch/q/qmorris/youngad2/new_pcawg3"
+	#extract_features(mc_data,b_data,mc_raw_dir)
+	#print_gurnit_2(mc_data,b_data,"/scratch/q/qmorris/youngad2/gurnit_f")
 
 
 # ===========================

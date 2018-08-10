@@ -62,54 +62,24 @@ double compute_M_total(double *C, int M, int T) {
 
 }
 
-int evict(uint32_t *S_w, uint32_t *I_w, int k, int M, int K, FILE *S_s_fp) {
-
-	int start;
-	long num_elements, num_written;
+int evict(uint32_t *S_w, int k, int M, FILE *S_s_fp) {
+	// remove all rows from memory except for the last one
+	// S_w is (W,M)
 	
-	if (k+1 < W) {
-
-		// write everything to the disk (memory was never full)
-		printf("Final write to disk\n");
-		assert(k+1 == K);
-		start = 0;
-		num_elements = K*M;
-		for (int i = 0; i < K; i++) {
-			assert(I_w[i] == i);
-		}
-		num_written = fwrite( &S_w[0], sizeof(uint32_t), num_elements, S_s_fp );
-		if (num_written != num_elements) {
-			perror("Evict S_w write");
-			return -1;
-		}
-
-	} else {
-
-		//evict columns
-		printf("Memory full, evicting columns\n");
-		start = (k - W + 1) % W;
-		// printf("k = %d, start = %d\n", k, start);
-		assert( W % 2 == 0 );
-		assert( start == 0 || start == W/2 );
-
-		num_elements = (W/2)*M;
-		num_written = fwrite( &S_w[ I_w[start]*M ], sizeof(uint32_t), num_elements, S_s_fp);
-		if (num_written != num_elements) {
-			perror("Evict S_w write");
-			return -1;
-		}
-
-		if (k+1 == K) {
-			// need to get the other elements out of the array too
-			start = (k - (W/2) + 1) % W;
-			assert( start == 0 || start == W/2 );
-			num_written = fwrite( &S_w[ I_w[start]*M ], sizeof(uint32_t), num_elements, S_s_fp);
-			if (num_written != num_elements) {
-				perror("Evict S_w write 2");
-				return -1;
-			}
-		}
+	assert(k > 0);
+	int num_rows = (k+1) % W;
+	if (!num_rows) {
+		// (k+1) is a multiple of W, evict entire bank
+		num_rows = W;
 	}
+	int num_elements = num_rows*M;
+	int num_written = fwrite( S_w, sizeof(uint32_t), num_elements, S_s_fp );
+	if (num_written != num_elements) {
+		perror("Evict S_w write");
+		return -1;
+	}
+
+	printf("M=%d, num_rows=%d, num_elements=%d, num_written=%d\n\n", M, num_rows, num_elements, num_written);
 
 	return 0;
 
@@ -174,31 +144,33 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 	muts = NULL;
 
 	// working sets
-	double *E_w = malloc( W*M*sizeof(double) ); // (W,M)
+	double *E_w = calloc( W*M, sizeof(double) ); // (W,M)
 	if (!E_w) {
-		perror("E_w_malloc");
+		perror("E_w_calloc");
 		return -1;
 	}
-	uint32_t *S_w = malloc( W*M*sizeof(uint32_t) ); // (W,M)
+	uint32_t *S_w = calloc( W*M, sizeof(uint32_t) ); // (W,M)
 	if (!S_w) {
-		perror("S_w_malloc");
+		perror("S_w_calloc");
 		return -1;
 	}
 
 	// save on disk
-	double *E_f = malloc( K*sizeof(double) ); // (K,)
+	double *E_f = calloc( K, sizeof(double) ); // (K,)
 	if (!E_f) {
-		perror("E_f_malloc");
+		perror("E_f_calloc");
 		return -1;
 	}
 	// can't declare S_s array -- too big
 
 	// indexing
-	uint32_t *I_w = malloc( K*sizeof(uint32_t) ); // (K,)
-	if (!I_w) {
-		perror("I_w_malloc");
-		return -1;
-	}
+	uint32_t I_w;
+	uint32_t I_w_prev;
+	// uint32_t *I_w = malloc( K*sizeof(uint32_t) ); // (K,)
+	// if (!I_w) {
+	// 	perror("I_w_malloc");
+	// 	return -1;
+	// }
 
 	printf(">>> k = 0\n");
 	begin = omp_get_wtime();
@@ -207,15 +179,16 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 			E_w[ 0*M+i ] = -INFINITY;
 		} else {
 			E_w[ 0*M+i ] = score(0,i+1,C,M_total,T,seeds,num_seeds);
-			S_w[ i*W+0 ] = 0;
+			S_w[ 0*M+i ] = 0;
 		}
 	}
 	end = omp_get_wtime();
 	time_spent = (end-begin);
 	printf("time spent = %fs\n\n", time_spent);
 
-	I_w[0] = 0;
-	E_f[0] = E_w[ 0*M+(M-1) ];
+	I_w = 0;
+	I_w_prev = -1;
+	E_f[0] = E_w[ I_w*M+(M-1) ];
 
 	if (mp) {
 		printf("Using %d threads\n\n", mp);
@@ -224,58 +197,58 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 	for (int k = 1; k < K; k++) {
 		printf(">>> k = %d\n",k);
 		begin = omp_get_wtime();
-		I_w[k] = (I_w[k-1] + 1) % W;
-		//printf("I_w[%d] = %d\n", k, I_w[k]);
+		I_w_prev = (k-1) % W;
+		I_w = k % W;
 		
 		if (mp) {
+			
 			#pragma omp parallel for num_threads(mp)
-			for (int i = k; i < M; i++) {
-				// if (i % 1000 == 0) {
-				// 	printf("%d,", i);
-				// }
+			for (int i = 0; i < M; i++) {
 				double max_score = -INFINITY;
 				uint32_t max_seg = 0;
 				double temp_score;
-				
-				for (int j = k; j < i+1; j++) {
-					if (i-(j-1) < min_size) {
-						break;
-					}
-					temp_score = E_w[ I_w[k-1]*M+(j-1) ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
-					if (temp_score > max_score) {
-						max_score = temp_score;
-						max_seg = j-1;
+				if (i >= k) {
+					for (int j = k; j < i+1; j++) {
+						if (i-(j-1) < min_size) {
+							break;
+						}
+						temp_score = E_w[ I_w_prev*M+(j-1) ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
+						if (temp_score > max_score) {
+							max_score = temp_score;
+							max_seg = j-1;
+						}
 					}
 				}
-				E_w[ I_w[k]*M+i ] = max_score;
-				S_w[ I_w[k]*M+i ] = max_seg;
+				E_w[ I_w*M+i ] = max_score;
+				S_w[ I_w*M+i ] = max_seg;
 			}
+
 		} else {
-			for (int i = k; i < M; i++) {
-				if (i % 1000 == 0) {
-					printf("%d,", i);
-				}
+			
+			for (int i = 0; i < M; i++) {
 				double max_score = -INFINITY;
 				uint32_t max_seg = 0;
 				double temp_score;
-				
-				for (int j = k; j < i+1; j++) {
-					if (i-(j-1) < min_size) {
-						break;
-					}
-					temp_score = E_w[ I_w[k-1]*M+(j-1) ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
-					if (temp_score > max_score) {
-						max_score = temp_score;
-						max_seg = j-1;
+				if (i >= k) {
+					for (int j = k; j < i+1; j++) {
+						if (i-(j-1) < min_size) {
+							break;
+						}
+						temp_score = E_w[ I_w_prev*M+(j-1) ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
+						if (temp_score > max_score) {
+							max_score = temp_score;
+							max_seg = j-1;
+						}
 					}
 				}
-				E_w[ I_w[k]*M+i ] = max_score;
-				S_w[ I_w[k]*M+i ] = max_seg;
+				E_w[ I_w*M+i ] = max_score;
+				S_w[ I_w*M+i ] = max_seg;
 			}
+			
 		}
 		
 		// update the final array
-		E_f[k] = E_w[ I_w[k]*M+(M-1) ];
+		E_f[k] = E_w[ I_w*M+(M-1) ];
 		printf("E_f[%d] = %f\n", k, E_f[k]);
 		//print_double_array(E_w, W, M);
 
@@ -284,11 +257,11 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 		printf("time spent = %fs\n\n", time_spent);
 
 		// push modifications onto disk
-		// check if k+1 is a multiple of W/2 and > W/2
-		if ( (k+1) == K || ( ( ((k+1) % (W/2)) == 0 ) && (k+1 > W/2) ) ) {
+		// check if k+1 is a multiple of W and 
+		if ( (k+1) % W == 0 || (k+1) == K ) {
 			printf(">>> eviction!\n");
 			begin = omp_get_wtime();
-			if (evict(S_w,I_w,k,M,K,S_s_fp) < 0) {
+			if (evict(S_w,k,M,S_s_fp) < 0) {
 				return -1;
 			}
 			end = omp_get_wtime();
@@ -300,14 +273,14 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 
 	*final_score = E_f[K-1];
 	//print_double_array(E_f, K, 1);
-	print_uint32_array(S_w, K, M);
+	//print_uint32_array(S_w, K, M);
 	fwrite( E_f, sizeof(double), K, E_f_fp );
 	
 	// perform cleanup
 	free(E_f);
 	free(E_w);
 	free(S_w);
-	free(I_w);
+	//free(I_w);
 	if (fclose(E_f_fp)) {
 		perror("E_f close");
 		return -1;

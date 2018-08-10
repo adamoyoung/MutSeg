@@ -2,6 +2,7 @@ import sys
 import numpy as np
 import time
 from convert_to_C import convert
+import os
 
 # argv[1]: input file
 # argv[2]: output file
@@ -15,56 +16,77 @@ NUM_CHRMS = 22 # does not include the X chromosome or Y chromosome
 CHRM_LENS = [ 249250621, 243199373, 198022430, 191154276, 180915260, 171115067, 159138663, 146364022, 141213431, 135534747, 135006516, 133851895, 115169878, 107349540, 102531392, 90354753, 81195210, 78077248, 59128983, 63025520, 48129895, 51304566 ]
 sex_to_ind = {"m": 0, "M": 0, "male": 0, "f": 1, "F": 1, "female": 1, "b": 2, "both": 2}
 
-def preproc(file_name, group_by=1, num_folds=5):
+def preproc(dir_name, group_by=1, num_folds=5):
 
 	num_chrms = NUM_CHRMS
 
 	beg_time = time.clock_gettime(time.CLOCK_MONOTONIC)
-	print("[0] starting preproc, file = {}, group_by = {}, num_folds = {}".format(file_name,group_by,num_folds) )
+	print("[0] starting preproc, file = {}, group_by = {}, num_folds = {}".format(dir_name,group_by,num_folds) )
 
 	mut_pos = [set() for i in range(num_chrms)]
 	mut_tups = []
 	typs_set = set()
 
-	file = open(file_name, 'r')
+	file_paths = []
+	file_count = 0
+	entries = sorted(os.listdir(dir_name))
+	for entry in entries:
+		entry_path = os.path.join(dir_name,entry)
+		if os.path.isfile(entry_path):
+			file_paths.append(entry_path)
+			file_count += 1
+	assert( file_count == len(entries) )
 
-	# remove header
-	file.readline()
-	
-	line = file.readline()
-	line_count = 1
-	while line != '':
-		line = line.split(",")
-		#assert(len(line) == 12)
-		if len(line) != 12:
-			print(line_count)
-			print(line)
-			quit()
-		# if len(line) < 2:
-		# 	line = file.readline()
-		# 	continue
-		chrm, pos, dens, typ, sex = line[2], line[3], line[7], line[10], line[11].strip()
-		assert( chrm != "X" )
-		if chrm == "chr" or chrm == "Y":
+	for file_path in file_paths:
+
+		file_mut_tups = []
+
+		file = open(file_path, 'r')
+
+		# remove header
+		file.readline()
+		
+		line = file.readline()
+		line_count = 1
+		total_ints = 0.
+		while line != '':
+			line = line.split(",")
+			#assert(len(line) == 12)
+			if len(line) != 12:
+				print(line_count)
+				print(line)
+				quit()
+			# if len(line) < 2:
+			# 	line = file.readline()
+			# 	continue
+			chrm, pos, ints, typ, sex = line[2], line[3], line[7], line[10], line[11].strip()
+			assert( chrm != "X" )
+			if chrm == "chr" or chrm == "Y":
+				line = file.readline()
+				line_count += 1
+				continue
+			# if (sex == "F" and int(chrm)-1 == 21):
+			# 	print(line_count)
+			# 	quit()
+			# elif chrm == "Y":
+			# 	assert(mut_sex != "female")
+			# 	chrm = 22
+			else:
+				chrm = int(chrm)-1
+			pos, ints = int(pos)-1, float(ints)
+			assert( chrm >= 0 and chrm < num_chrms )
+			assert( sex == "M" or sex == "F")
+			mut_pos[chrm].add( pos )
+			file_mut_tups.append( (chrm,pos,typ,ints,sex) )
+			typs_set.add( typ )
 			line = file.readline()
 			line_count += 1
-			continue
-		# if (sex == "F" and int(chrm)-1 == 21):
-		# 	print(line_count)
-		# 	quit()
-		# elif chrm == "Y":
-		# 	assert(mut_sex != "female")
-		# 	chrm = 22
-		else:
-			chrm = int(chrm)-1
-		pos, dens = int(pos)-1, float(dens)
-		assert( chrm >= 0 and chrm < num_chrms )
-		assert( sex == "M" or sex == "F")
-		mut_pos[chrm].add( pos )
-		mut_tups.append( (chrm,pos,typ,dens,sex) )
-		typs_set.add( typ )
-		line = file.readline()
-		line_count += 1
+			total_ints += ints
+
+		for mut_tup in file_mut_tups:
+			# convert intensities to frequencies
+			freq_mut_tup = (mut_tup[0], mut_tup[1], mut_tup[2], mut_tup[3]/total_ints, mut_tup[4])
+			mut_tups.append(freq_mut_tup)
 
 	cur_time = time.clock_gettime(time.CLOCK_MONOTONIC)
 	print( "[{0:.0f}] read in all of the lines".format(cur_time-beg_time) )
@@ -112,11 +134,11 @@ def preproc(file_name, group_by=1, num_folds=5):
 
 	for p in range(len(parts)):
 		for i in range(parts[p][0],parts[p][1]):
-			chrm, pos, typ, dens, sex = mut_tups[indices[i]]
+			chrm, pos, typ, freq, sex = mut_tups[indices[i]]
 			fold = p
 			typ_ind = typ_to_ind[typ]
 			pos_ind = abs_to_relative[chrm][pos]
-			final_array[fold][pos_ind][typ_ind] = dens
+			final_array[fold][pos_ind][typ_ind] = freq
 
 	# for i in range(num_chrms):
 	# 	print( "starting chrm {} mut_tups".format(i+1) )
@@ -175,14 +197,15 @@ def preproc(file_name, group_by=1, num_folds=5):
 
 if __name__ == "__main__":
 
-	if len(sys.argv) != 5:
-		print("Usage: python3 preproc.py [ src file (.txt) ] [ dest file (.npy) ] [ group by ] [ num folds ]")
+	if len(sys.argv) != 6:
+		eprint("Usage: python3 preproc.py [ src directory (full of .txt files) ] [ dest file (.npz) ] [ group by ] [ num folds ] [ cfile dir path ]")
 		exit(1)
-	csv_file_name = sys.argv[1]
+	dir_name = sys.argv[1]
 	mc_data_file_name = sys.argv[2]
 	group_by = int(sys.argv[3])
 	num_folds = int(sys.argv[4])
-	array, mut_pos, chrm_begs, typs_list = preproc(csv_file_name, group_by, num_folds)
+	cfile_dir_path = sys.argv[5] # often "data/mc_chrms/mc_100"
+	array, mut_pos, chrm_begs, typs_list = preproc(dir_name, group_by, num_folds)
 	np.savez(mc_data_file_name, array=array, mut_pos=mut_pos, chrm_begs=chrm_begs, typs_list=typs_list, chrm_lens=CHRM_LENS, float_t=[float_t], sex_to_ind=[sex_to_ind])
 	# mc_data = np.load(mc_data_file_name)
 	# array = mc_data["array"]
@@ -191,20 +214,23 @@ if __name__ == "__main__":
 	# typs_list = mc_data["typs_list"]
 	folds = [n for n in range(num_folds)]
 	for n in range(num_folds):
-		train_folds = folds[:n] + folds[n+1:]
-		valid_fold = n
+		if num_folds == 1:
+			train_folds = [0]
+			valid_fold = None
+		else:
+			train_folds = folds[:n] + folds[n+1:]
+			valid_fold = n
 		print("train folds = {}, valid fold = [{}]".format(train_folds,valid_fold))
 		train_array = np.sum([array[f] for f in train_folds], axis=0)
 		# m_mc_data = {"array": train_arrays[0], "mut_pos": mut_pos, "chrm_begs":  chrm_begs, "typs_list": typs_list}
 		# f_mc_data = {"array": train_arrays[1], "mut_pos": mut_pos, "chrm_begs":  chrm_begs, "typs_list": typs_list}
 		data = {"array": train_array, "mut_pos": mut_pos, "chrm_begs":  chrm_begs, "typs_list": typs_list}
-		cfile_core_name = "data/mc_chrms/mc_100"
 		for c in range(NUM_CHRMS):
 			# convert(m_mc_data, c, cfile_core_name + "_m")
 			# convert(f_mc_data, c, cfile_core_name + "_f")
-			convert(data, c, "{}_fold_{}_chrm_{}.dat".format(cfile_core_name,n,c+1))
+			convert(data, c, "{}/fold_{}_chrm_{}.dat".format(cfile_dir_path,n,c+1))
 
 	# also do one with no folds
 	data = {"array": np.sum(array, axis=0), "mut_pos": mut_pos, "chrm_begs":  chrm_begs, "typs_list": typs_list}
 	for c in range(NUM_CHRMS):
-		convert(data, c, "{}_all_chrm_{}.dat".format(cfile_core_name,c+1))
+		convert(data, c, "{}/all_chrm_{}.dat".format(cfile_dir_path,c+1))
