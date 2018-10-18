@@ -21,7 +21,7 @@ int compute_counts(double *muts, int M, int T, double **C_ptr) {
 
 }
 
-double score(int start, int end, double *C, int M_total, int T, int *seeds, int num_seeds) {
+double score(int start, int end, double *C, double M_total, int T, int *seeds, int num_seeds) {
 
 	double tumour_C[T];
 	double total_C = 0.;
@@ -106,33 +106,88 @@ void print_uint32_array(uint32_t *array, int dim_1, int dim_2) {
 	}
 }
 
-int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_seeds, const char *E_f_file_name, const char *S_s_file_name, double *final_score, int mp) {
+void update_table(double *E_cur, uint32_t *S_cur, double *E_prev, int mp, int M, int k, int min_size, double *C, double M_total, int T, int *seeds, int num_seeds) {
+	
+	if (mp) {
+
+		#pragma omp parallel for num_threads(mp)
+		for (int i = 0; i < M; i++) {
+			double max_score = -INFINITY;
+			uint32_t max_seg = 0;
+			double temp_score;
+			if (i >= k) {
+				for (int j = k; j < i+1; j++) {
+					if (i-(j-1) < min_size) {
+						break;
+					}
+					temp_score = E_prev[ j-1 ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
+					if (temp_score > max_score) {
+						max_score = temp_score;
+						max_seg = j-1;
+					}
+				}
+			}
+			E_cur[ 0*M+i ] = max_score;
+			S_cur[ 0*M+i ] = max_seg;
+		}
+
+	} else {
+		
+		for (int i = 0; i < M; i++) {
+			double max_score = -INFINITY;
+			uint32_t max_seg = 0;
+			double temp_score;
+			if (i >= k) {
+				for (int j = k; j < i+1; j++) {
+					if (i-(j-1) < min_size) {
+						break;
+					}
+					temp_score = E_prev[ j-1 ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
+					if (temp_score > max_score) {
+						max_score = temp_score;
+						max_seg = j-1;
+					}
+				}
+			}
+			E_cur[ i ] = max_score;
+			S_cur[ i ] = max_seg;
+		}
+
+	}
+
+}
+
+int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_seeds, const char *E_f_file_name, const char *S_s_file_name, const char *E_s_file_name, double *final_score, int mp, int prev_K) {
 
 	assert(M < MAX_UINT32);
+	assert(prev_K >= 0);
 	
 	// timekeeping variables
 	double begin, end;
 	double time_spent;
 
 	// open data files
-	FILE *E_f_fp = fopen(E_f_file_name, "w");
+	char *fp_mode;
+	if (!prev_K) {
+		fp_mode = "w";
+	} else {
+		fp_mode = "a+";
+	}
+	FILE *E_f_fp = fopen(E_f_file_name, fp_mode);
 	if (!E_f_fp) {
 		perror("E_f_open");
 		return -1;
 	}
-	// if (fprintf(E_f_fp,"%d\n",K) < 0) {
-	// 	perror("E_f_write");
-	// 	return -1;
-	// }
-	FILE *S_s_fp = fopen(S_s_file_name, "w");
+	FILE *S_s_fp = fopen(S_s_file_name, fp_mode);
 	if (!S_s_fp) {
 		perror("S_s_open");
 		return -1;
 	}
-	// if (fprintf(S_s_fp,"%d,%d\n",M,K) < 0) {
-	// 	perror("S_w_write");
-	// 	return -1;
-	// }
+	FILE *E_s_fp = fopen(E_s_file_name, fp_mode);
+	if (!E_s_fp) {
+		perror("E_s_open");
+		return -1;
+	}
 
 	double *C = NULL;
 	compute_counts(muts,M,T,&C);
@@ -155,110 +210,119 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 		return -1;
 	}
 
-	// save on disk
+	// final scores to save on disk
 	double *E_f = calloc( K, sizeof(double) ); // (K,)
 	if (!E_f) {
 		perror("E_f_calloc");
 		return -1;
 	}
-	// can't declare S_s array -- too big
 
-	// indexing
-	uint32_t I_w;
-	uint32_t I_w_prev;
-	// uint32_t *I_w = malloc( K*sizeof(uint32_t) ); // (K,)
-	// if (!I_w) {
-	// 	perror("I_w_malloc");
-	// 	return -1;
-	// }
+	// previous scores
+	double *E_l = calloc( M, sizeof(double) ); // (M,)
+	if (!E_l) {
+		perror("E_l calloc");
+		return -1;
+	}
 
-	printf(">>> k = 0\n");
-	begin = omp_get_wtime();
-	for (int i = 0; i < M; i++) {
-		if (i+1 < min_size) {
-			E_w[ 0*M+i ] = -INFINITY;
-		} else {
-			E_w[ 0*M+i ] = score(0,i+1,C,M_total,T,seeds,num_seeds);
-			S_w[ 0*M+i ] = 0;
+
+	if (prev_K) {
+		// load previous state and store in S_s[0] and E_s[0]
+		printf(">>> load k = %d\n", prev_K);
+		begin = omp_get_wtime();
+		int seek, read;
+		// E_s file
+		seek = fseek(E_s_fp, -M*sizeof(double), SEEK_END);
+		if (seek) {
+			perror("E_s seek");
+			return -1;
 		}
+		read = fread(E_l, sizeof(double), M, E_s_fp);
+		if (read != M) {
+			perror("E_s read");
+			return -1;
+		}
+		printf("E_f[%d] = %f\n", prev_K, E_l[M-1]);
+		// // move the E_s pointer back to the end of the file
+		// seek = fseek(E_s_fp, 0, SEEK_END);
+		// if (seek) {
+		// 	perror("E_s seek");
+		// 	return -1;
+		// }
+		// S_s file
+		// seek = fseek(S_s_fp, -M*sizeof(uint32_t), SEEK_END);
+		// if (seek) {
+		// 	perror("S_s seek");
+		// 	return -1;
+		// }
+		// read = fread(S_w, sizeof(uint32_t), M, S_s_fp);
+		// if (read != M) {
+		// 	perror("S_s seek");
+		// 	return -1;
+		// }
+		// // move the S_s pointer back so that the last row gets overwritten in eviction
+		// seek = fseek(S_s_fp, -M*sizeof(uint32_t), SEEK_END);
+		// if (seek) {
+		// 	perror("S_s seek");
+		// 	return -1;
+		// }
+		end = omp_get_wtime();
+		time_spent = (end-begin);
+		printf("time spent = %fs\n\n", time_spent);
+	}
+
+	if (mp) {
+		printf("Using %d threads\n\n", mp);
+	}
+	
+	if (!prev_K) {
+		// initial run
+		printf(">>> init k = 1\n");
+		begin = omp_get_wtime();
+		for (int i = 0; i < M; i++) {
+			if (i+1 < min_size) {
+				E_w[ 0*M+i ] = -INFINITY;
+			} else {
+				E_w[ 0*M+i ] = score(0,i+1,C,M_total,T,seeds,num_seeds);
+				S_w[ 0*M+i ] = 0;
+			}
+		}
+		E_f[0] = E_w[ 0*M+(M-1) ];
+		printf("E_f[1] = %f\n", E_f[0]);
+	} else {
+		// initial run uses E_l array
+		printf(">>> k = %d\n", prev_K+1);
+		begin = omp_get_wtime();
+		update_table(&E_w[0],&S_w[0],&E_l[0],mp,M,prev_K,min_size,C,M_total,T,seeds,num_seeds);
+		E_f[0] = E_w[ 0*M+(M-1) ];
+		printf("E_f[%d] = %f\n", prev_K+1, E_w[M-1]);
 	}
 	end = omp_get_wtime();
 	time_spent = (end-begin);
 	printf("time spent = %fs\n\n", time_spent);
 
-	I_w = 0;
-	I_w_prev = -1;
-	E_f[0] = E_w[ I_w*M+(M-1) ];
-
-	if (mp) {
-		printf("Using %d threads\n\n", mp);
-	}
+	// indexing
+	uint32_t I_w = 0;
+	uint32_t I_w_prev = -1;
 
 	for (int k = 1; k < K; k++) {
-		printf(">>> k = %d\n",k);
+		printf(">>> k = %d\n",prev_K+k+1);
 		begin = omp_get_wtime();
-		I_w_prev = (k-1) % W;
-		I_w = k % W;
-		
-		if (mp) {
-			
-			#pragma omp parallel for num_threads(mp)
-			for (int i = 0; i < M; i++) {
-				double max_score = -INFINITY;
-				uint32_t max_seg = 0;
-				double temp_score;
-				if (i >= k) {
-					for (int j = k; j < i+1; j++) {
-						if (i-(j-1) < min_size) {
-							break;
-						}
-						temp_score = E_w[ I_w_prev*M+(j-1) ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
-						if (temp_score > max_score) {
-							max_score = temp_score;
-							max_seg = j-1;
-						}
-					}
-				}
-				E_w[ I_w*M+i ] = max_score;
-				S_w[ I_w*M+i ] = max_seg;
-			}
+		I_w_prev = I_w;
+		I_w = (I_w+1) % W;
 
-		} else {
-			
-			for (int i = 0; i < M; i++) {
-				double max_score = -INFINITY;
-				uint32_t max_seg = 0;
-				double temp_score;
-				if (i >= k) {
-					for (int j = k; j < i+1; j++) {
-						if (i-(j-1) < min_size) {
-							break;
-						}
-						temp_score = E_w[ I_w_prev*M+(j-1) ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
-						if (temp_score > max_score) {
-							max_score = temp_score;
-							max_seg = j-1;
-						}
-					}
-				}
-				E_w[ I_w*M+i ] = max_score;
-				S_w[ I_w*M+i ] = max_seg;
-			}
-			
-		}
+		update_table(&E_w[I_w*M],&S_w[I_w*M],&E_w[I_w_prev*M],mp,M,prev_K+k,min_size,C,M_total,T,seeds,num_seeds);
 		
 		// update the final array
 		E_f[k] = E_w[ I_w*M+(M-1) ];
-		printf("E_f[%d] = %f\n", k, E_f[k]);
+		printf("E_f[%d] = %f\n", prev_K+k+1, E_f[k]);
 		//print_double_array(E_w, W, M);
 
 		end = omp_get_wtime();
 		time_spent = (end-begin);
 		printf("time spent = %fs\n\n", time_spent);
 
-		// push modifications onto disk
-		// check if k+1 is a multiple of W and 
-		if ( (k+1) % W == 0 || (k+1) == K ) {
+		// push modifications onto disk if necessary
+		if ( (I_w+1) % W == 0 || (k+1) == K ) {
 			printf(">>> eviction!\n");
 			begin = omp_get_wtime();
 			if (evict(S_w,k,M,S_s_fp) < 0) {
@@ -272,21 +336,27 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 	}
 
 	*final_score = E_f[K-1];
+	fwrite( E_f, sizeof(double), K, E_f_fp );
+	double *E_s = &E_w[I_w*M];
+	fwrite( E_s, sizeof(double), M, E_s_fp );
 	//print_double_array(E_f, K, 1);
 	//print_uint32_array(S_w, K, M);
-	fwrite( E_f, sizeof(double), K, E_f_fp );
-	
+
 	// perform cleanup
 	free(E_f);
 	free(E_w);
 	free(S_w);
-	//free(I_w);
+	free(E_l);
 	if (fclose(E_f_fp)) {
 		perror("E_f close");
 		return -1;
 	}
 	if (fclose(S_s_fp)) {
 		perror("S_w close");
+		return -1;
+	}
+	if (fclose(E_s_fp)) {
+		perror("E_s close");
 		return -1;
 	}
 

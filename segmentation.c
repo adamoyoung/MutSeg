@@ -9,9 +9,11 @@ int main(int argc, char *argv[]) {
 	// argv[6] == mp
 	// argv[7] == E_f file name
 	// argv[8] == S_s file name
+	// argv[9] == E_s file name
+	// argv[10] == prev_K
 
-	if (argc != 9) {
-		printf("Error: usage\n");
+	if (argc != 11) {
+		fprintf(stderr, "Error: argc = %d, should be 11\n", argc);
 		return -1;
 	}
 
@@ -24,6 +26,8 @@ int main(int argc, char *argv[]) {
 	int mp = atoi(argv[6]);
 	char *E_f_file_name = argv[7];
 	char *S_s_file_name = argv[8];
+	char *E_s_file_name = argv[9];
+	int prev_K = atoi(argv[10]);
 
 	// these are not passed as arguments... for now
 	int min_size = 1;
@@ -71,25 +75,30 @@ int main(int argc, char *argv[]) {
 
 	double final_score;
 	int ret_val;
-	ret_val = k_seg(muts, M, T, K, min_size, seeds, num_seeds, E_f_file_name, S_s_file_name, &final_score, mp);
+	ret_val = k_seg(muts, M, T, K, min_size, seeds, num_seeds, E_f_file_name, S_s_file_name, E_s_file_name, &final_score, mp, prev_K);
 	if (ret_val < 0) {
 		fprintf(stderr, "Error: program terminated early\n");
 		return -1;
 	} else {
-		printf("final_score = %f\n", final_score);
+		if (!prev_K) {
+			printf("final_score = %f\n", final_score);
+		} else {
+			printf("intermediate score = %f\n", final_score);
+		}
+		
 	}
 
-	uint32_t *final_seg = malloc(K*sizeof(uint32_t));
+	uint32_t *final_seg = malloc((K+prev_K)*sizeof(uint32_t));
 	if (!final_seg) {
 		perror("final_seg malloc");
 		return -1;
 	}
-	ret_val = traceback(S_s_file_name, M, K, final_seg);
+	ret_val = traceback(S_s_file_name, M, K+prev_K, final_seg);
 	if (ret_val < 0) {
 		fprintf(stderr, "Error: program terminated early\n");
 		return -1;
 	} else {
-		print_path(final_seg, K);
+		print_path(final_seg, K+prev_K);
 	}
 
 	return 0;
