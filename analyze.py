@@ -163,7 +163,7 @@ def calculate_entropy_of_T(mc_data):
 
 def nats_to_bits(nats):
 
-	return nats / np.log2(np.exp(1))
+	return nats / np.log(2.)
 
 def compute_total_mutual_information(mc_data,mut_ints,Ks,scores):
 	""" assumes mut_ints only has data for 1 k_mode and uses all of the folds """
