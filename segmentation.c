@@ -1,16 +1,16 @@
 #include "k_seg.h"
 
 int main(int argc, char *argv[]) {
-	// argv[1] == quick test
-	// argv[2] == muts_file_name (not important if the thing is a quick test)
-	// argv[3] == M
-	// argv[4] == T
-	// argv[5] == K
-	// argv[6] == mp
-	// argv[7] == E_f file name
-	// argv[8] == S_s file name
-	// argv[9] == E_s file name
-	// argv[10] == prev_K
+	// argv[1] == quick test (0/1, whether to run a quick test or not)
+	// argv[2] == muts_file_name (str, path for a .dat file that contains a MxT array for a specific chromosome)
+	// argv[3] == M (int, number of unique mutation positions)
+	// argv[4] == T (int, number of cancer types)
+	// argv[5] == K (int, number of segments)
+	// argv[6] == mp (0/1, whether or not to use multiprocessing)
+	// argv[7] == E_f file name (str)
+	// argv[8] == S_s file name (str)
+	// argv[9] == E_s file name (str)
+	// argv[10] == prev_K (int)
 
 	if (argc != 11) {
 		fprintf(stderr, "Error: argc = %d, should be 11\n", argc);

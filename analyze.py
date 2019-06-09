@@ -130,7 +130,8 @@ def print_gurnit_2(mc_data, b_data, csv_file_name, seg_size):
 		with open(k_mode_file_name, 'w') as k_mode_file:
 			for c in range(num_chrms):
 				for k in range(Ks[k_mode][c]):
-					print( "{},{},{},{}".format(c+1,k,bp_bounds[k_mode][-1][c][k],bp_bounds[k_mode][-1][c][k+1]) , file=k_mode_file)
+					print()
+					#print( "{},{},{},{}".format(c+1,k,bp_bounds[k_mode][-1][c][k],bp_bounds[k_mode][-1][c][k+1]), file=k_mode_file)
 
 
 	print("naive")
@@ -139,13 +140,14 @@ def print_gurnit_2(mc_data, b_data, csv_file_name, seg_size):
 	with open(naive_file_name, 'w') as naive_file:
 		for c in range(num_chrms):
 			for k in range(naive_Ks[c]):
-				print( "{},{},{},{}".format(c+1,k,naive_bp_bounds[c][k],naive_bp_bounds[c][k+1]) , file=naive_file)
+				print()
+				#print( "{},{},{},{}".format(c+1,k,naive_bp_bounds[c][k],naive_bp_bounds[c][k+1]) , file=naive_file)
 
 
 def calculate_entropy_of_T(mc_data):
 
 	chrm_begs = mc_data["chrm_begs"]
-	array = mc_data["arrays"][2]
+	array = np.sum(mc_data["array"], axis=0)
 	float_t = array.dtype
 
 	T = array.shape[1]
@@ -156,19 +158,107 @@ def calculate_entropy_of_T(mc_data):
 		total_Ts[i] = np.sum(array[ chrm_begs[i] : chrm_begs[i+1] ], axis=0)
 	total_Ts[-1] = np.sum(array[ chrm_begs[-1] : ], axis=0)
 	total_Ms = np.reshape(np.sum(total_Ts, axis=1), [num_chrms, 1])
-	entropy_of_T = - np.sum( (total_Ts / total_Ms) * np.log((total_Ts / total_Ms)), axis=1 )
+	entropy_of_T = - np.sum((total_Ts / total_Ms) * np.log((total_Ts / total_Ms)), axis=1 )
 	assert( len(entropy_of_T.shape) == 1 and entropy_of_T.shape[0] == num_chrms )
 
 	return entropy_of_T
 
 def nats_to_bits(nats):
 
-	return nats / np.log(2.)
+	return nats * np.log(2.)
+
+# def compute_total_mutual_information(mc_data,b_data):
+# 	""" assumes mut_ints only has data for 1 k_mode (L) and uses all of the folds """
+
+# 	array = np.sum(mc_data["array"], axis=0)
+# 	chrm_begs = mc_data["chrm_begs"]
+# 	float_t = mc_data["float_t"][0]
+# 	eps = np.finfo(float_t).eps
+	
+# 	mut_ints = b_data["mut_ints"][1,0]
+# 	final_scores = b_data["final_scores"][1,0]
+# 	Ks = b_data["Ks"][1]
+
+# 	H_of_T_given_C = calculate_entropy_of_T(mc_data)
+# 	final_scores += H_of_T_given_C
+# 	# # added June 26 - possibly the source of error from before
+# 	# log_final_scores = np.log(final_scores)
+
+# 	num_chrms = chrm_begs.shape[0]
+# 	T = array.shape[1]
+# 	total_K = np.sum(Ks)
+# 	chrm_begs = list(chrm_begs) + [array.shape[0]]
+# 	# chrm_mut_dens = np.zeros([num_chrms, T], dtype=float_t)
+# 	# for i in range(num_chrms):
+# 	# 	chrm_mut_dens[i] = np.sum(array[ chrm_begs[i] : chrm_begs[i+1] ], axis=0)
+# 	chrm_mut_dens = np.sum(mut_ints,axis=1)
+
+# 	# probabilities that are based off of counts
+# 	log_P_of_C = np.log(np.sum(chrm_mut_dens, axis=1) / np.sum(chrm_mut_dens))
+# 	assert( log_P_of_C.shape[0] == num_chrms and len(log_P_of_C.shape) == 1 and log_P_of_C.shape == final_scores.shape )
+# 	log_P_of_T = np.log(np.sum(chrm_mut_dens, axis=0) / np.sum(chrm_mut_dens))
+# 	log_P_of_B_given_C = np.full([total_K,num_chrms], eps, dtype=float_t)
+# 	prev = 0
+# 	for i in range(num_chrms):
+# 		total_chrm_mut_ints = np.sum(mut_ints[i])
+# 		for j in range(Ks[i]):
+# 			# don't forget to sum over T
+# 			# += is to prevent 0's
+# 			if total_chrm_mut_ints != 0.:
+# 				log_P_of_B_given_C[prev+j,i] += np.sum(mut_ints[i,j]) / total_chrm_mut_ints 
+# 		prev += Ks[i]
+# 	log_P_of_B_given_C = np.log(log_P_of_B_given_C)
+# 	log_P_of_T_given_C_and_B = np.full([T,num_chrms,total_K], eps, dtype=float_t)
+# 	for t in range(T):
+# 		prev = 0
+# 		for i in range(num_chrms):
+# 			for j in range(Ks[i]):
+# 				if np.sum(mut_ints[i,j]) != 0.:
+# 					log_P_of_T_given_C_and_B[t,i,prev+j] += mut_ints[i,j,t] / np.sum(mut_ints[i,j])
+# 			prev += Ks[i]
+# 	log_P_of_T_given_C_and_B = np.log(log_P_of_T_given_C_and_B)
+	
+# 	# new stuff
+# 	log_P_of_C_given_B = np.full([num_chrms,total_K], eps, dtype=float_t)
+# 	prev = 0
+# 	for i in range(num_chrms):
+# 		for j in range(Ks[i]):
+# 			log_P_of_C_given_B[i,prev+j] = 1.
+# 		prev += Ks[i]
+# 	log_P_of_C_given_B = np.log(log_P_of_C_given_B)
+# 	log_P_of_B = logsumexp(np.reshape(log_P_of_C, [1,num_chrms]) + log_P_of_B_given_C, axis=1)
+# 	log_P_of_T_given_B = logsumexp(np.reshape(log_P_of_C_given_B, [1,num_chrms,total_K]) + log_P_of_T_given_C_and_B, axis=1)
+# 	log_P_of_T_given_C = logsumexp(np.reshape(log_P_of_B_given_C.T, [1,num_chrms,total_K]) + log_P_of_T_given_C_and_B, axis=2)
+# 	log_P_of_C_and_T = ( np.reshape(log_P_of_C, [1,num_chrms]) + log_P_of_T_given_C ).T
+# 	# end of new stuff
+
+# 	log_P_of_C_and_B = ( np.reshape(log_P_of_C, [1,num_chrms]) + log_P_of_B_given_C  ).T
+# 	log_P_of_C_and_T_and_B = ( np.reshape(log_P_of_C, [1,num_chrms,1]) + np.reshape(log_P_of_B_given_C.T, [1,num_chrms,total_K]) + log_P_of_T_given_C_and_B ).transpose([1,0,2])
+# 	log_P_of_T_and_B = np.reshape(log_P_of_B, [1,total_K]) + log_P_of_T_given_B
+
+# 	I_of_T_and_B_given_C = np.sum(np.exp(log_P_of_C) * np.reshape(final_scores,[num_chrms,1]))
+# 	H_of_C = - np.sum( np.exp(log_P_of_C) * log_P_of_C )
+# 	H_of_C_given_T = np.sum( np.exp(log_P_of_C_and_T) * ( np.reshape(log_P_of_T, [1,T]) - log_P_of_C_and_T ) )
+# 	H_of_C_given_B = np.sum( np.exp(log_P_of_C_and_B) * ( np.reshape(log_P_of_B, [1,total_K]) - log_P_of_C_and_B ) )
+# 	#H_of_C_given_T_and_B = - np.sum( np.exp(log_P_of_C_and_T_and_B) * log_P_of_C_and_T_and_B ) + np.sum( np.sum( np.exp(log_P_of_C_and_T_and_B), axis=0) * log_P_of_T_and_B )
+# 	H_of_B = - np.sum(np.exp(log_P_of_B) * log_P_of_B)
+# 	H_of_T = - np.sum(np.exp(log_P_of_T) * log_P_of_T)
+# 	H_of_C_and_T_and_B = - np.sum(np.exp(log_P_of_C_and_T_and_B) * log_P_of_C_and_T_and_B)
+# 	H_of_T_and_B = - np.sum(np.exp(log_P_of_T_and_B) * log_P_of_T_and_B)
+# 	H_of_C_given_T_and_B = H_of_C_and_T_and_B - H_of_T_and_B
+# 	#assert( H_of_T_given_C <= H_of_T)
+
+# 	I_of_T_and_B = I_of_T_and_B_given_C - H_of_C_given_T - H_of_C_given_B + H_of_C_given_T_and_B + H_of_C
+
+# 	print(f"I(T;B) = {I_of_T_and_B_given_C}, I(T;B|C) = {I_of_T_and_B}")
+# 	print(f"I(T;B) = {nats_to_bits(I_of_T_and_B_given_C)}, I(T;B|C) = {nats_to_bits(I_of_T_and_B)}")
+
+# 	return I_of_T_and_B_given_C, I_of_T_and_B
 
 def compute_total_mutual_information(mc_data,mut_ints,Ks,scores):
 	""" assumes mut_ints only has data for 1 k_mode and uses all of the folds """
 
-	array = np.sum(mc_data["arrays"], axis=0)
+	array = np.sum(mc_data["array"], axis=0)
 	chrm_begs = mc_data["chrm_begs"]
 	float_t = mc_data["float_t"][0]
 	eps = np.finfo(float_t).eps
@@ -375,7 +465,7 @@ def compute_conditional_mutual_info(array,chrm_begs,ints,Ks):
 	H_of_T_given_C = - np.sum( (np.sum(ints, axis=1) / np.reshape(M_c,[num_chrms,1])) * np.log(np.sum(ints, axis=1) / np.reshape(M_c,[num_chrms,1]) + eps), axis=1 )
 	#print(P_of_C)
 	#print(H_of_T_given_C)
-	print(nats_to_bits(np.sum(H_of_T_given_C * P_of_C)))
+	#print(nats_to_bits(np.sum(H_of_T_given_C * P_of_C)))
 	H_of_S_and_T_given_C = - np.sum( (ints/np.reshape(M_c,[num_chrms,1,1]) ) * np.log(ints / np.reshape(M_c,[num_chrms,1,1]) + eps), axis=(1,2) )
 	H_of_S_given_C = - np.sum( ( np.sum(ints,axis=2)/np.reshape(M_c,[num_chrms,1]) ) * np.log(np.sum(ints,axis=2)/np.reshape(M_c,[num_chrms,1]) + eps), axis=1 )
 	information_C = H_of_T_given_C + H_of_S_given_C - H_of_S_and_T_given_C
@@ -548,18 +638,26 @@ def opt_vs_naive_information_2(mc_data, b_data):
 	# naive segmentation
 	mut_ints, mut_bounds, bp_bounds, Ks = naive_traceback(mc_data,seg_size)
 	I_of_T_and_B_given_C = compute_conditional_mutual_info(array,chrm_begs,mut_ints,Ks)
+	#I_of_T_and_B = compute_total_mutual_information(array,mut_ints,Ks,scores)
 	b_I_of_T_and_B_given_C = nats_to_bits(I_of_T_and_B_given_C)
-	print( "NAIVE: I_of_T_and_B_given_C = {0:.6f}".format(b_I_of_T_and_B_given_C) )
+	#b_I_of_T_and_B = nats_to_bits(I_of_T_and_B)
+	print( "NAIVE: I(T;B|C) = {0:.6f}".format(b_I_of_T_and_B_given_C) )
+	#print( "NAIVE: I(T;B) = {0:.6f}".format(b_I_of_T_and_B) )
 
 	# optimal segmentation	
 	Ks = b_data["Ks"]
 	mut_ints = b_data["mut_ints"]
+	scores = b_data["final_scores"]
 	I_of_T_and_B_given_C = np.zeros([2], dtype=float_t)
 	I_of_T_and_B_given_C[0] = compute_conditional_mutual_info(array,chrm_begs,mut_ints[0,-1],Ks[0])
 	I_of_T_and_B_given_C[1] = compute_conditional_mutual_info(array,chrm_begs,mut_ints[1,-1],Ks[1])
+	I_of_T_and_B = np.zeros([2], dtype=float_t)
+	I_of_T_and_B[0] = compute_total_mutual_information(mc_data,mut_ints[0,-1],Ks[0],scores[0,-1])[1]
+	I_of_T_and_B[1] = compute_total_mutual_information(mc_data,mut_ints[1,-1],Ks[1],scores[1,-1])[1]
 	b_I_of_T_and_B_given_C = nats_to_bits(I_of_T_and_B_given_C)
-	print( "OPT: I_of_T_and_B_given_C, n = {0:.6f}, l = {1:.6f}".format(b_I_of_T_and_B_given_C[0],b_I_of_T_and_B_given_C[1]) )
-
+	b_I_of_T_and_B = nats_to_bits(I_of_T_and_B)
+	print( "OPT: I(T;B|C), n = {0:.6f}, l = {1:.6f}".format(b_I_of_T_and_B_given_C[0],b_I_of_T_and_B_given_C[1]) )
+	#print( "OPT: I(T;B), n = {0:.6f}, l = {1:.6f}".format(b_I_of_T_and_B[0],b_I_of_T_and_B[1]) )
 
 def update_mc_file_fast(mc_data,b_data,naive_bp_bounds,naive_Ks,mc_file_path):
 
@@ -671,13 +769,13 @@ if __name__ == "__main__":
 
 	mode = sys.argv[1]
 
-	mc_data_file_name = "/home/q/qmorris/youngad2/data/mc_100_f.npz"
-	bound_file_name = "/home/q/qmorris/youngad2/data/b_100_f_10.npz"
-	seg_size = 100000 # or 1000000
+	mc_data_file_name = "/home/q/qmorris/youngad2/MutSeg/data/mc_100_f.npz"
+	bound_file_name = "/home/q/qmorris/youngad2/MutSeg/data/b_100_f.npz"
+	seg_size = 1000000 # or 100000
 
 	if mode == "d2n":
 		# convert raw .dat to b_data.npz
-		dat_dir = "/home/q/qmorris/youngad2/results/sept_10"
+		dat_dir = "/home/q/qmorris/youngad2/MutSeg/results/jan_28"
 		mc_data = np.load(mc_data_file_name)
 		convert_dat_to_npz_2(dat_dir, mc_data, bound_file_name, seg_size)
 
@@ -695,6 +793,12 @@ if __name__ == "__main__":
 		mc_data = np.load(mc_data_file_name)
 		b_data = np.load(bound_file_name)
 		classify_segs_2(mc_data, b_data)
+
+	elif mode == "tmi":
+		# compute total mutual information
+		mc_data = np.load(mc_data_file_name)
+		b_data = np.load(bound_file_name)
+		opt_vs_naive_information_2(mc_data,b_data)
 
 	else:
 		# invalid mode
