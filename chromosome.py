@@ -29,8 +29,22 @@ NUM_CHRMS = len(CHRM_LENS)
 
 INT_T = np.uint32
 FLOAT_T = np.float64
+EPS = np.finfo(FLOAT_T).eps # machine epsilon, for entropy calculations
 
 CFILE_BASE = "all_chrm"
+
+
+class Segmentation:
+	"""basically just a struct for segmentation-related data"""
+
+	def __init__(self, num_segs, mut_ints, mut_bounds, bp_bounds, final_score):
+
+		self.num_segs = num_segs
+		self.mut_ints = mut_ints
+		self.mut_bounds = mut_bounds
+		self.bp_bounds = bp_bounds
+		self.final_score = final_score
+
 
 class Chromosome:
 
@@ -46,6 +60,7 @@ class Chromosome:
 		self.mut_pos = None # numpy array
 		self.pos_to_idx = None # numpy array
 		self.group_by = None # int
+		self.segmentations = {} # dict of segmentation objects
 
 	def get_chrm_len(self):
 		return self.length
@@ -65,9 +80,9 @@ class Chromosome:
 	def get_num_cancer_types(self):
 		return len(self.cancer_types)
 
-	def get_num_naive_segs(self, seg_size):
-		num_segs = self.get_chrm_len() // seg_size
-		if self.get_chrm_len() % seg_size > 0:
+	def get_num_segs(self, naive_seg_size):
+		num_segs = self.get_chrm_len() // naive_seg_size
+		if self.get_chrm_len() % naive_seg_size > 0:
 			num_segs += 1
 		return num_segs
 
@@ -80,6 +95,18 @@ class Chromosome:
 		self.pos_to_idx = {}
 		for i in range(self.unique_pos_count):
 			self.pos_to_idx[sorted_set[i]] = i
+
+	def get_mut_array(self):
+		if self.group_by:
+			return self.mut_array_g
+		else:
+			return self.mut_array
+
+	def get_mut_pos(self):
+		if self.group_by:
+			return self.mut_pos_g
+		else:
+			return self.mut_pos
 
 	# def update(self, pos, typ, ints):
 	# 	self.mut_array[self.pos_to_idx[pos]][self.type_to_idx[typ]] += ints
@@ -118,3 +145,53 @@ class Chromosome:
 			barray = bytes(self.mut_array)
 			assert( len(barray) == self.unique_pos_count*len(self.cancer_types)*itemsize )
 		return barray
+
+	def add_seg(self, num_segs, segmentation):
+
+		self.segmentations[num_segs] = segmentation
+
+	def get_seg(self, naive_seg_size):
+
+		num_segs = self.get_num_segs(naive_seg_size)
+		return self.segmentations[num_segs]
+
+	def get_naive_seg_arrays(self, naive_seg_size):
+		# get necessary constants and arrays
+		T = self.get_num_cancer_types()
+		num_segs = self.get_num_segs(naive_seg_size)
+		mut_array = self.get_mut_array()
+		mut_pos = self.get_mut_pos()
+		# set up new arrays
+		mut_ints = np.zeros([num_segs, T], dtype=FLOAT_T)
+		mut_bounds = np.zeros([num_segs+1], dtype=INT_T)
+		bp_bounds = np.zeros([num_segs+1], dtype=INT_T)
+		# set bp bounds
+		for k in range(num_segs):
+			bp_bounds[k] = k*naive_seg_size
+		bp_bounds[-1] = self.get_chrm_len()
+		# compute mut_bounds and mut_ints from bp_bounds
+		# saddle_mut_count should be very low, but it's not currently checked
+		saddle_mut_count = 0
+		mut_bounds[0] = 0
+		cur_idx = 0
+		for k in range(num_segs):
+			prev_idx = cur_idx
+			end_pt = bp_bounds[k+1]
+			while cur_idx < mut_pos.shape[0] and mut_pos[cur_idx][1] < end_pt:
+				cur_idx += 1
+			if cur_idx < mut_pos.shape[0] and mut_pos[cur_idx][0] < end_pt and mut_pos[cur_idx][1] >= end_pt:
+				# mutation is saddling boundaries
+				saddle_mut_count += 1
+				if end_pt - mut_pos[cur_idx][0] > mut_pos[cur_idx][1] - end_pt + 1:
+					# mutation overlaps more with current segment, add it to the current mut_ints
+					cur_idx += 1
+			if prev_idx != cur_idx:
+				mut_ints[k] = np.sum(mut_array[prev_idx:cur_idx], axis=0)
+			else: # prev_idx == cur_idx
+				# there are no mutations in this segment
+				pass
+			mut_bounds[k+1] = cur_idx
+		total_mut_ints = np.sum(mut_ints).astype(np.int)
+		total_mut_array = np.sum(mut_array).astype(np.int)
+		assert( total_mut_ints == total_mut_array ),  "{} vs {}, sm = {}".format(total_mut_ints, total_mut_array, saddle_mut_count)
+		return Segmentation(naive_seg_size, mut_ints, mut_bounds, bp_bounds, None)

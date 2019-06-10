@@ -16,13 +16,13 @@ import shlex
 parser = argparse.ArgumentParser()
 parser.add_argument("--mc_file_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/mc_data_mp.pkl")
 parser.add_argument("--cfile_dir_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/cfiles_mp")
-parser.add_argument("--chrm_id", type=int, default=-1, help="chromosome id (starts at 0)")
+parser.add_argument("--chrm_id", type=int, default=-1, choices=list(range(-1,22)), help="chromosome id (starts at 0)")
 parser.add_argument("--naive_seg_size", type=int, default=1000000) # 1 Megabase
-parser.add_argument("--num_cores", type=int, default=80, help="number of logical cores required on scinet, should be <=80")
+parser.add_argument("--num_cores", type=int, default=80, choices=list(range(1,81)), help="number of logical cores required on scinet, should be <=80")
 parser.add_argument("--results_dir_path", type=str, default="/scratch/q/qmorris/youngad2/results")
 parser.add_argument("--stdout_dir_path", type=str, default="/scratch/q/qmorris/youngad2/stdouts")
 parser.add_argument("--stderr_dir_path", type=str, default="/scratch/q/qmorris/youngad2/stderrs")
-parser.add_argument("--max_time", type=int, default=24, help="wall time in hours, should be <=24")
+parser.add_argument("--max_time", type=int, default=24, choices=list(range(1,25)), help="wall time in hours, should be <=24")
 parser.add_argument("--exe_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/segmentation", help="path to segmentation executable")
 parser.add_argument("--script_dir_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/scripts", help="directory for creating bash scripts")
 
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 		muts_file_name = cfile_paths[i]
 		m = chrms[i].get_unique_pos_count()
 		t = chrms[i].get_num_cancer_types()
-		k = chrms[i].get_num_naive_segs(seg_size)
+		k = chrms[i].get_num_segs(seg_size)
 		chrm_id = chrms[i].get_chrm_id()
 		e_f_fp = os.path.join(results_dir_path,"E_f_chrm_{}.dat".format(chrm_id))
 		s_s_fp = os.path.join(results_dir_path,"S_s_chrm_{}.dat".format(chrm_id))
