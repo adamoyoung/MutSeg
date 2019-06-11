@@ -37,12 +37,12 @@ CFILE_BASE = "all_chrm"
 class Segmentation:
 	"""basically just a struct for segmentation-related data"""
 
-	def __init__(self, num_segs, mut_ints, mut_bounds, bp_bounds, final_score):
+	def __init__(self, num_segs, seg_mut_ints, seg_mut_bounds, seg_bp_bounds, final_score):
 
 		self.num_segs = num_segs
-		self.mut_ints = mut_ints
-		self.mut_bounds = mut_bounds
-		self.bp_bounds = bp_bounds
+		self.seg_mut_ints = seg_mut_ints
+		self.seg_mut_bounds = seg_mut_bounds
+		self.seg_bp_bounds = seg_bp_bounds
 		self.final_score = final_score
 
 
@@ -147,11 +147,10 @@ class Chromosome:
 		return barray
 
 	def add_seg(self, num_segs, segmentation):
-
+		# only allows one segmentation per num_segs
 		self.segmentations[num_segs] = segmentation
 
 	def get_seg(self, naive_seg_size):
-
 		num_segs = self.get_num_segs(naive_seg_size)
 		return self.segmentations[num_segs]
 
@@ -159,39 +158,54 @@ class Chromosome:
 		# get necessary constants and arrays
 		T = self.get_num_cancer_types()
 		num_segs = self.get_num_segs(naive_seg_size)
-		mut_array = self.get_mut_array()
-		mut_pos = self.get_mut_pos()
+		mut_array = self.mut_array # not mut_array_g
+		mut_pos = self.mut_pos # not mut_pos_g
+		assert mut_array.shape[0] == mut_pos.shape[0]
+		# remove the last few mutations that were not included in the grouping operation
+		max_mut_idx = mut_array.shape[0]
+		if self.group_by:
+			max_mut_idx = (self.mut_array.shape[0] // self.group_by) * self.group_by
 		# set up new arrays
-		mut_ints = np.zeros([num_segs, T], dtype=FLOAT_T)
-		mut_bounds = np.zeros([num_segs+1], dtype=INT_T)
-		bp_bounds = np.zeros([num_segs+1], dtype=INT_T)
+		seg_mut_ints = np.zeros([num_segs, T], dtype=FLOAT_T)
+		seg_mut_bounds = np.zeros([num_segs+1], dtype=INT_T)
+		seg_bp_bounds = np.zeros([num_segs+1], dtype=INT_T)
 		# set bp bounds
 		for k in range(num_segs):
-			bp_bounds[k] = k*naive_seg_size
-		bp_bounds[-1] = self.get_chrm_len()
-		# compute mut_bounds and mut_ints from bp_bounds
-		# saddle_mut_count should be very low, but it's not currently checked
-		saddle_mut_count = 0
-		mut_bounds[0] = 0
+			seg_bp_bounds[k] = k*naive_seg_size
+		seg_bp_bounds[-1] = self.get_chrm_len()
+		# compute seg_mut_bounds and seg_mut_ints from seg_bp_bounds
+		# # saddle_mut_count should be very low, but it's not currently checked
+		# saddle_mut_count = 0
+		seg_mut_bounds[0] = 0
 		cur_idx = 0
 		for k in range(num_segs):
 			prev_idx = cur_idx
-			end_pt = bp_bounds[k+1]
-			while cur_idx < mut_pos.shape[0] and mut_pos[cur_idx][1] < end_pt:
+			end_pt = seg_bp_bounds[k+1]
+			# if self.group_by:
+			# 	while cur_idx < max_mut_idx and mut_pos[cur_idx][1] < end_pt:
+			# 		cur_idx += 1
+			# 	if cur_idx < max_mut_idx and mut_pos[cur_idx][0] < end_pt and mut_pos[cur_idx][1] >= end_pt:
+			# 		# mutation is saddling boundaries
+			# 		saddle_mut_count += 1
+			# 		if end_pt - mut_pos[cur_idx][0] > mut_pos[cur_idx][1] - end_pt + 1:
+			# 			# mutation overlaps more with current segment, add it to the current seg_mut_ints
+			# 			cur_idx += 1
+			# 	if prev_idx != cur_idx:
+			# 		seg_mut_ints[k] = np.sum(mut_array[prev_idx:cur_idx], axis=0)
+			# 	else: # prev_idx == cur_idx
+			# 		# there are no mutations in this segment
+			# 		pass
+			# 	seg_mut_bounds[k+1] = cur_idx
+			# else:
+			while cur_idx < max_mut_idx and mut_pos[cur_idx] < end_pt:
 				cur_idx += 1
-			if cur_idx < mut_pos.shape[0] and mut_pos[cur_idx][0] < end_pt and mut_pos[cur_idx][1] >= end_pt:
-				# mutation is saddling boundaries
-				saddle_mut_count += 1
-				if end_pt - mut_pos[cur_idx][0] > mut_pos[cur_idx][1] - end_pt + 1:
-					# mutation overlaps more with current segment, add it to the current mut_ints
-					cur_idx += 1
 			if prev_idx != cur_idx:
-				mut_ints[k] = np.sum(mut_array[prev_idx:cur_idx], axis=0)
+				seg_mut_ints[k] = np.sum(mut_array[prev_idx:cur_idx], axis=0)
 			else: # prev_idx == cur_idx
 				# there are no mutations in this segment
 				pass
-			mut_bounds[k+1] = cur_idx
-		total_mut_ints = np.sum(mut_ints).astype(np.int)
-		total_mut_array = np.sum(mut_array).astype(np.int)
-		assert( total_mut_ints == total_mut_array ),  "{} vs {}, sm = {}".format(total_mut_ints, total_mut_array, saddle_mut_count)
-		return Segmentation(naive_seg_size, mut_ints, mut_bounds, bp_bounds, None)
+			seg_mut_bounds[k+1] = cur_idx
+		total_seg_mut_ints = np.sum(seg_mut_ints)
+		total_mut_array = np.sum(mut_array)
+		assert np.isclose(total_seg_mut_ints, total_mut_array, atol=0.1),  "{} vs {}, sm = {}".format(total_seg_mut_ints, total_mut_array, saddle_mut_count)
+		return Segmentation(naive_seg_size, seg_mut_ints, seg_mut_bounds, seg_bp_bounds, None)

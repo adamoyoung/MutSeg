@@ -94,11 +94,6 @@ def preproc(dir_name, mode, group_by, num_procs):
 		proc_inputs.append((i,mode,file_paths[running_total:running_total+num_per_proc[i]]))
 		running_total += num_per_proc[i]
 	assert running_total == len(file_paths)
-	# file_count = mp.Manager.Value('d',0)
-	# mut_entries = mp.Manager.list()
-	# types_set = mp.Manager.dict()
-	# # mut_pos = [mp.Manager.dict() for i in range(chrmlib.NUM_CHRMS)]
-	# mut_pos_list = mp.Manager.list()
 
 	cur_time = time.time()
 	print( "[{0:.0f}] read in all of the files".format(cur_time-beg_time) )
