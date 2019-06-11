@@ -1,3 +1,7 @@
+"""
+Important data structures for the oother scripts in the project.
+"""
+
 import numpy as np
 
 CHRM_LENS = [ 

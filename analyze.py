@@ -1,3 +1,9 @@
+"""
+Script for intepreting and saving segmentation results.
+This script should be run on boltz.
+"""
+
+
 import chromosome as chrmlib
 from chromosome import Segmentation
 import numpy as np
@@ -379,7 +385,7 @@ if __name__ == "__main__":
 		print("naive tmi", nats_to_bits(naive_tmi))
 		print("difference", nats_to_bits(optimal_tmi-naive_tmi))
 	elif FLAGS.program_mode == "ann":
-		# produce a csv where each mutation is annotated with a segment in the optimal and naive
+		# modify input csvs such that each mutation is annotated with an optimal segment
 		annotate_segs(FLAGS.mc_file_path, FLAGS.naive_seg_size, FLAGS.csv_dir_path, FLAGS.num_procs)
 	else:
 		raise NotImplementedError

@@ -2,6 +2,8 @@
 Script for creating bash scripts and then running them on scinet with slurm.
 If maximum parallelism is used (80 logical cores) then the longest segmentation (chromosome 2) takes ~1h 40 min.
 Before running on scinet, run the command "module load $PY_MOD" to load the necessary python modules.
+Must make sure that the executable (usally called "segmentation", indicated by exe_path) has been compiled.
+To compile "segmentation" on niagara, run "module load gcc" then type make in the directory with k_seg.c, k_seg.h, segmentation.c, and the Makefile
 """
 
 import pickle

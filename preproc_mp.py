@@ -1,7 +1,12 @@
+"""
+Script for preprocessing .csv files and saving the results in a chromosome .pkl file and mutliple .dat files for the C program.
+This script should be run on boltz
+"""
+
+
 import sys
 import numpy as np
 import time
-# from convert_to_C import convert
 import os
 import argparse
 import chromosome as chrmlib
@@ -14,8 +19,8 @@ parser.add_argument("--src_dir_path", type=str, default="for_adamo")
 parser.add_argument("--mc_file_path", type=str, default="mc_data.pkl")
 parser.add_argument("--group_by", type=int, default=100)
 # parser.add_argument("--num_folds", type=int, default=5)
-parser.add_argument("--cfile_dir_path", type=str, default="cfiles")
-parser.add_argument("--mode", type=str, default="freqs")
+parser.add_argument("--cfile_dir_path", type=str, default="cfiles", help="directory for .dat files for C program")
+parser.add_argument("--mode", type=str, choices=["sample_freqs", "counts"], default="sample_freqs", help="normalization method (counts is no normalization)")
 parser.add_argument("--random_seed", type=int, default=373)
 parser.add_argument("--num_procs", type=int, default=mp.cpu_count())
 
@@ -42,7 +47,7 @@ def proc_files_func(proc_input):
 		# df.where(chrom_cond, inplace=True).dropna(axis=0, inplace=True)
 		df["Chromosome"] = df["Chromosome"] - 1
 		df["Start_position"] = df["Start_position"] - 1
-		if mode == "freqs":
+		if mode == "sample_freqs":
 			file_ints = df["Count"].sum()
 			df["Count"] = df["Count"] / file_ints
 		df.rename(index=str, columns={"Chromosome": "chrm", 
