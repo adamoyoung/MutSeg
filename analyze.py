@@ -17,7 +17,7 @@ parser.add_argument("--mc_file_path", type=str, default="mc_data_mp.pkl", help="
 parser.add_argument("--naive_seg_size", type=int, default=1000000, help="size of segments in naive segmentation (in bp)")
 parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "ann"], default="seg")
 parser.add_argument("--csv_dir_path", type=str, default="for_adamo", help="only useful in \'ann\' mode, path to directory where csvs that need to be annotated will be")
-parser.add_argument("--num_procs", type=int, default=mp.cpu_count())
+parser.add_argument("--num_procs", type=int, default=mp.cpu_count(), help="only useful in \'ann\' mode, number of process to fork")
 
 
 def median(a, b):
