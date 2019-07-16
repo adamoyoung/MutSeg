@@ -1,0 +1,7 @@
+Description of data files:
+
+[boltz] for_adamo: directory with all of the .csv raw files
+[boltz] for_adamo_ann: same as for_adamo, but the .csv files have an "optimal_segment" column
+[boltz and niagara/home] cfiles_mp: the .dat files that are used for the C program
+[boltz and niagara/scratch] results: the .dat files that are the outputs of the C program
+[boltz] mc_data.pkl: the chromosome data file that contains a python list of Chromosome objects, each of which have the mutations and the results of the 1MB-equivalent optimal segmentation

@@ -1,7 +1,12 @@
+"""
+Script for preprocessing .csv files and saving the results in a chromosome .pkl file and mutliple .dat files for the C program.
+This script should be run on boltz
+"""
+
+
 import sys
 import numpy as np
 import time
-# from convert_to_C import convert
 import os
 import argparse
 import chromosome as chrmlib
@@ -14,15 +19,15 @@ parser.add_argument("--src_dir_path", type=str, default="for_adamo")
 parser.add_argument("--mc_file_path", type=str, default="mc_data.pkl")
 parser.add_argument("--group_by", type=int, default=100)
 # parser.add_argument("--num_folds", type=int, default=5)
-parser.add_argument("--cfile_dir_path", type=str, default="cfiles")
-parser.add_argument("--mode", type=str, default="freqs")
+parser.add_argument("--cfile_dir_path", type=str, default="cfiles", help="directory for .dat files for C program")
+parser.add_argument("--mode", type=str, choices=["sample_freqs", "counts"], default="sample_freqs", help="normalization method (counts is no normalization)")
 parser.add_argument("--random_seed", type=int, default=373)
 parser.add_argument("--num_procs", type=int, default=mp.cpu_count())
 
 
 def proc_files_func(proc_input):
 	proc_start = time.time()
-	proc_id, mode, proc_file_paths = proc_input[0], proc_input[1], proc_input[2]
+	proc_id, proc_file_paths = proc_input[0], proc_input[1]
 	proc_file_count = 0
 	proc_mut_entries = []
 	proc_typs_set = set()
@@ -38,13 +43,14 @@ def proc_files_func(proc_input):
 		assert (df["Chromosome"] >= 1).all()
 		assert (df["Chromosome"] <= chrmlib.NUM_CHRMS).all()
 		df = df[desired_entries]
-		# chrom_cond = df.Chromsome not in ["X", "Y"]
-		# df.where(chrom_cond, inplace=True).dropna(axis=0, inplace=True)
 		df["Chromosome"] = df["Chromosome"] - 1
 		df["Start_position"] = df["Start_position"] - 1
-		if mode == "freqs":
-			file_ints = df["Count"].sum()
-			df["Count"] = df["Count"] / file_ints
+		# print(df.shape[0])
+		# temp = df["Count"].to_numpy() / np.sum(df["Count"].to_numpy())
+		# print(temp[:2])
+		# df["Count"] = df["Count"] / df["Count"].sum()
+		# print(df["Count"][:2].to_numpy())
+		# print("====")
 		df.rename(index=str, columns={"Chromosome": "chrm", 
 										"Start_position": "pos", 
 										"cancer_type": "typ", 
@@ -62,7 +68,7 @@ def proc_files_func(proc_input):
 def preproc(dir_name, mode, group_by, num_procs):
 
 	beg_time = time.time()
-	print("[0] starting preproc, file = {}, group_by = {}".format(dir_name,group_by) )
+	print("[0] starting preproc, directory = {}, mode = {}, group_by = {}".format(dir_name,mode,group_by) )
 
 	# # set of unique positions
 	# mut_pos = [set() for i in range(chrmlib.NUM_CHRMS)]
@@ -81,7 +87,7 @@ def preproc(dir_name, mode, group_by, num_procs):
 		if os.path.isfile(entry_path):
 			file_paths.append(entry_path)
 			file_count += 1
-	assert( file_count == len(entries) )
+	assert file_count == len(entries)
 
 	num_per_proc = [len(file_paths) // num_procs for i in range(num_procs)]
 	for i in range(len(file_paths) % num_procs):
@@ -91,7 +97,7 @@ def preproc(dir_name, mode, group_by, num_procs):
 	running_total = 0
 	proc_inputs = []
 	for i in range(num_procs):
-		proc_inputs.append((i,mode,file_paths[running_total:running_total+num_per_proc[i]]))
+		proc_inputs.append((i,file_paths[running_total:running_total+num_per_proc[i]]))
 		running_total += num_per_proc[i]
 	assert running_total == len(file_paths)
 
