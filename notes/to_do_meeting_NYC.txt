@@ -1,8 +1,0 @@
-(DONE) compare mutual information (optimal vs naive)
-figure
-compare sexes
-correlation of mutation rates across segments (optimal vs naive)
-
-
-total num segs (naive,hg38) = 2922
-not that for some chromosomes, there were mutations that existed outside of the "max length". additionally, for each chromosome, the last segment could be larger than the other ones if the chromosome is not evenly divisible by SEG_SIZE

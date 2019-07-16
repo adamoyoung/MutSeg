@@ -1,8 +1,0 @@
-to do:
-
-
-- train the different things for male/female (make sure that k_seg.c is not broken when there are zeros in the data)
-
-- compute mutual information for the segmentations
-
-- generate figures for the chromosomes
