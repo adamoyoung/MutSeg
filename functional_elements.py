@@ -1,36 +1,35 @@
-import matplotlib.pyplot as plt
 import sys
-import pandas as pd
-import gzip
-import operator
 import os.path
+import argparse
+import pandas as pd
+import numpy as np
+import gzip
 import pickle
 import tarfile
-import argparse
 import csv 
-import numpy as np
 import seaborn as sns
 import matplotlib.patches as mpatches
-import pickle
+import matplotlib.pyplot as plt
+
 
 # Constants
 TAR_FILE_15 = r"../../Data/Chromatin Annotations/15_State/all.dense.browserFiles.Tgz"
 TAR_FILE_18 = r"../../Data/Chromatin Annotations/18_State/all.dense.browserFiles.Tgz"
 CHROMATIN_STATES_DIR_15 = r"../../Data/Chromatin Annotations/15_State/chromatin_data"
-CHROMATIN_STATES_DIR_18 = r"../../Data/Chromatin Annotations/18_State/chromatin_data"
+CHROMATIN_STATES_DIR_18 = r"C:\Users\Kuba\Desktop\Work\Vector\Deeplift\Data\Chromatin Annotations\18_State\chromatin_data"
 CELL_TYPES_RAW = r"../../Data/Chromatin Annotations/cell_types.xlsx"
 CELL_TYPES_REFACTORED = r"../../Data/Chromatin Annotations/cell_types_refactored.xlsx"
 DISCARD_CHRMS = ['chrX', 'chrY', 'chrM', '']
 NUM_CHRMS = 22
-RESULTS_UNCOMBINED_DIR_15 = r"../../Data/Chromatin Annotations/15_State/results_uncombined/"
-RESULTS_COMBINED_DIR_15 = r"../../Data/Chromatin Annotations/18_State/results/"
-RESULTS_UNCOMBINED_DIR_18 = r"../../Data/Chromatin Annotations/18_State/results_uncombined/"
-RESULTS_COMBINED_DIR_18 = r"../../Data/Chromatin Annotations/18_State/results/"
-OPT_SEG_BOUNDS_CSV = r"../../../Genome GerryMandering/MutSeg_Jacob/data/mutation_counts/opt_seg.csv"
-NAIVE_SEG_BOUNDS_CSV = r"../../../Genome GerryMandering/MutSeg_Jacob/data/mutation_counts/naive_seg.csv"
+RESULTS_UNCOMBINED_DIR_15 = r"C:/Users/Kuba/Desktop/Work/Vector/Deeplift/Data/Chromatin Annotations/15_State/results_uncombined/"
+RESULTS_COMBINED_DIR_15 = r"C:/Users/Kuba/Desktop/Work/Vector/Deeplift/Data/Chromatin Annotations/15_State/results/"
+RESULTS_UNCOMBINED_DIR_18 = r"C:/Users/Kuba/Desktop/Work/Vector/Deeplift/Data/Chromatin Annotations/18_State/results_uncombined/"
+RESULTS_COMBINED_DIR_18 = r"C:/Users/Kuba/Desktop/Work/Vector/Deeplift/Data/Chromatin Annotations/18_State/results/"
+OPT_SEG_BOUNDS_CSV = r"data/mutation_counts/opt_seg.csv"
+NAIVE_SEG_BOUNDS_CSV = r"data/mutation_counts/naive_seg.csv"
 
 
-# Maps labels to meaning according to roadmap chromatin state annotations
+# Maps labels to meaning according to roadmap chromatin state annotations for the 15 State model
 class Transcription_factor_mapping_15_State():
     MAPPING={
         "1_TssA": "Active TSS",
@@ -50,7 +49,7 @@ class Transcription_factor_mapping_15_State():
         "15_Quies": "Quiescent-Low",
     }
 
-
+# Maps labels to meaning according to roadmap chromatin state annotations for the 18 State model
 class Transcription_factor_mapping_18_State():
     MAPPING = {
         "1_TssA": "Active TSS",
@@ -74,7 +73,6 @@ class Transcription_factor_mapping_18_State():
         "18_Quies": "Quiescent-Low",
     }
 
-
 parser = argparse.ArgumentParser()
 feature_parser = parser.add_mutually_exclusive_group(required=False)
 feature_parser.add_argument('--15_State', dest='new', action='store_false', help="Use 15 State Model")
@@ -82,44 +80,40 @@ feature_parser.add_argument('--18_State', dest='new', action='store_true', help=
 parser.set_defaults(new=True)
 
 
-"""
-Decompress all the files in the tar file
-"""
-def extract_tar_file(path):
-    tf = tarfile.open(path)
-    tf.extractall()
 
-"""
-Return hex version of an rgb color code
-"""
+" ----------------------------- FUNCTIONS FOR CELL TYPE STUFF ----------------------------- "
 def rgb_to_hex(rgb):
+    """
+    Return hex version of an rgb color code
+    -> NOT USED FOR GENOME GERRY
+    """
     rgb = rgb.split(',')
     rgb = int(rgb[0]), int(rgb[1]), int(rgb[2])
 
     return '#%02x%02x%02x' % rgb
 
-"""
-Extract the columns we need from the original excel file of cell types
-"""
 def refactor_cell_types_data(excel_file_raw, excel_file_refactored):
+    """
+    Extract the columns we need from the original excel file of cell types
+    -> NOT USED FOR GENOME GERRY
+    """
     # Get df and refactor it
     df = pd.read_excel(excel_file_raw)
     df = df.iloc[:, [1, 3, 4, 7, 8]]
     df.columns = ["Epigenome ID (EID)", "Cell Group", "Color", "Anatomic Location", "Cell Type"]
     df = df.iloc[2:-8]
-
     df.to_excel(excel_file_refactored, index=None, header=True)
 
-"""
-Return a mapping from hex color codes to cell types and anatomic location
-"""
 def extract_cell_types(cell_types):
+    """
+    Return a mapping from hex color codes to cell types and anatomic location based on the data provided
+    -> NOT USED IN GENOME GERRY
+    """
     color_to_cell_type = {}
-
     for i in range(len(cell_types)):
         color = cell_types['Color'][i].upper()
 
-        # We already have this data point
+        # We already have cell type info from this color
         if color in color_to_cell_type.keys():
             continue
         else:
@@ -131,10 +125,145 @@ def extract_cell_types(cell_types):
 
     return color_to_cell_type
 
-"""
-Return a dictionary with chromatin annotation data for each autosome
-"""
+def append_cell_data_to_annotations(color_to_cell_type, all_data):
+    """
+    Append the cell type data onto chromatin annotations in all_data, by matching colors in color_to_cell_type
+    -> NOT USED IN GENOME GERRY
+    """
+    for chr_data in all_data:
+        hex_codes = chr_data["Hex Code"]
+    
+        for i in range(len(hex_codes)):
+            hex_code = hex_codes[i]
+
+            # Found matching cell type for this color
+            if hex_code in color_to_cell_type.keys():
+                results = color_to_cell_type[hex_code]
+                chr_data["Cell Type"].append(results[0])
+                chr_data["Cell Group"].append(results[1])
+                chr_data["Anatomical Location"].append(results[2])
+
+            # No data mapping this hex code to cell location
+            else:
+                chr_data["Cell Type"].append("Unknown")
+                chr_data["Cell Group"].append("Unknown")
+                chr_data["Anatomical Location"].append("Unknown")
+
+
+
+" ----------------------------- HELPERS ----------------------------- "
+def extract_tar_file(src, dest_directory):
+    """
+    Decompress all the files in the tar file at src to dest_directory
+    """
+    tf = tarfile.open()
+    tf.extractall(path=dest_directory)
+
+def aggregate_results(src_dir, result_dir):
+    """
+    Aggregate result from all src directory files, remove unneeded fields, and write for each chrom to a pkl file in results directory
+    -> Since during the data extraction, I intermittently write to disc, I now collect each of those writes into one pkl object
+    """
+    for i in range(NUM_CHRMS):
+        print("Chr: {}".format( i + 1))
+        data_file = src_dir + "chr_{}_functional_annotations.pkl".format(i + 1)
+        data = []
+        with open(data_file, 'rb') as reader:
+            try:
+                while True:
+                    data.append(pickle.load(reader))
+            except EOFError:
+                pass
+
+        parsed_data = {"Start": [], "End": [], "Transcription Factor": [], "Cell Type": [], "Cell Group": [], "Anatomical Location": []}
+
+        for j in range(len(data)):
+            data_inst = data[j]
+
+            parsed_data['Start'].extend(data_inst['Start'])
+            parsed_data['End'].extend(data_inst['End'])
+            parsed_data['Transcription Factor'].extend(data_inst['Transcription Factor'])
+
+        # Sort by starting position
+        start = parsed_data['Start']
+        start = [int(start[i]) for i in range(len(start))]
+        end = parsed_data['End']
+        end = [int(end[i]) for i in range(len(end))]
+        tr = parsed_data['Transcription Factor']
+
+        all_data = list(zip(start, end, tr))
+        all_data.sort()
+        
+        start_sorted = [start for start, end, tr in all_data]
+        end_sorted = [end for start, end, tr in all_data]
+        tr_sorted = [tr for start, end, tr in all_data]
+
+        parsed_data = {"Start": start_sorted, "End": end_sorted, "Transcription Factor": tr_sorted}
+
+        with open(result_dir + "chr_{}_functional_annotations.pkl".format(i + 1), 'wb') as writer:
+            pickle.dump(parsed_data, writer, protocol=pickle.HIGHEST_PROTOCOL)
+
+def interval_intersection_helper(functional_element_interval, segment_bounds, counts, ind):
+    """
+    Functional element interval, segment interval -> bp bounds to check intersections for
+    Bounds -> list of all the segment bounds, used to check multiple segment boundary intersections
+    Counts -> list of functional element counts in each segment
+    Count -> count of functional element counts in current segment 
+    Ind -> index into current element in bounds
+    """
+    curr_segment_interval = segment_bounds[ind]
+
+    # Case 1: functional element completely out of current segment
+    if functional_element_interval[0] >= curr_segment_interval[1]:
+
+        # Since functional element intervals are sorted by base pair, all proceeding functional element can't be in current segment either.
+        ind += 1
+        curr_segment_interval = segment_bounds[ind]
+
+        # Loop over segments until theres an intersection with functional element leading to case 2 or case 3
+        while functional_element_interval[0] >= curr_segment_interval[1]:
+            ind += 1
+            curr_segment_interval = segment_bounds[ind]
+    
+    # Case 2: functional element completely contained within segment
+    if curr_segment_interval[0] <= functional_element_interval[0] and curr_segment_interval[1] >= functional_element_interval[1]:
+
+        # Add to current count and return, so that calling function moves onto next transcription factor
+        counts[ind] += 1
+        return segment_bounds, counts, ind
+
+    # Case 3: functional element split between multiple segs
+
+    # Create a list of sizes of overlap in all seg. We will take the largest and consider the functional element to be in that segment
+    lengths_in_following_segs = []
+    length_in_curr_seg = curr_segment_interval[1] - functional_element_interval[0]
+    lengths_in_following_segs.append(length_in_curr_seg)
+
+    i = 1
+
+    # While the functional element overlaps with this segment
+    while (ind + i) < len(segment_bounds) and functional_element_interval[1] > segment_bounds[ind + i][1]:
+        length_in_next_seg = segment_bounds[ind + i][1] - segment_bounds[ind + i][0]
+        lengths_in_following_segs.append(length_in_next_seg)
+        i += 1
+    length_in_next_seg = functional_element_interval[1] - segment_bounds[ind + i - 1][0]
+    lengths_in_following_segs.append(length_in_next_seg)
+
+    # Add count to the maximum segment intersection from the list
+    max_seg_ind = lengths_in_following_segs.index(max(lengths_in_following_segs))
+    counts[ind + max_seg_ind] += 1
+    
+    return segment_bounds, counts, ind
+
+
+
+" ----------------------------- MAIN FUNCTIONS ----------------------------- "
+
 def extract_chromatin_annotations(chromatin_data, all_data, model_18):
+    """
+    Mutate all_data dictionary with chromatin annotation data for each autosome based on data files from Roadmap Epigenomics.
+    -> chromatin_data contains data from a single file (chromatin start, chromatin end, transcription factor, color_code)
+    """
     if model_18:
         tr_map = Transcription_factor_mapping_18_State()
     else:
@@ -161,108 +290,104 @@ def extract_chromatin_annotations(chromatin_data, all_data, model_18):
         all_data[chr_index]["Transcription Factor"].append(transcription_factor)
         all_data[chr_index]["Hex Code"].append(color_hex)
 
-"""
-Append the cell type data onto chromatin annotations
-"""
-def append_cell_data_to_annotations(color_to_cell_type, all_data):
-    for chr_to_chromatin in all_data:
-        hex_codes = chr_to_chromatin["Hex Code"]
-    
-        for i in range(len(chr_to_chromatin["Hex Code"])):
-            hex_code = hex_codes[i]
 
-            if hex_code in color_to_cell_type.keys():
-                results = color_to_cell_type[hex_code]
-                print("SUCCESS")
-                chr_to_chromatin["Cell Type"].append(results[0])
-                chr_to_chromatin["Cell Group"].append(results[1])
-                chr_to_chromatin["Anatomical Location"].append(results[2])
-
-            # No data mapping this hex code to cell location
-            else:
-                chr_to_chromatin["Cell Type"].append("Unknown")
-                chr_to_chromatin["Cell Group"].append("Unknown")
-                chr_to_chromatin["Anatomical Location"].append("Unknown")
-
-"""
-Aggregate result from all src directory files, remove unneeded fields, and write to pkl file in results directory
-"""
-def aggregate_results(src_dir, result_dir):
-    for i in range(NUM_CHRMS):
-        data_file = src_dir + "chr_{}_functional_annotations.pkl".format(i + 1)
-        data = []
-        with open(data_file, 'rb') as reader:
-            try:
-                while True:
-                    data.append(pickle.load(reader))
-            except EOFError:
-                pass
-
-        parsed_data = {"Start": [], "End": [], "Transcription Factor": [], "Cell Type": [], "Cell Group": [], "Anatomical Location": []}
-
-        for j in range(len(data)):
-            data_inst = data[j]
-
-            parsed_data['Start'].extend(data_inst['Start'])
-            parsed_data['End'].extend(data_inst['End'])
-            parsed_data['Transcription Factor'].extend(data_inst['Transcription Factor'])
-            parsed_data['Cell Type'].extend(data_inst['Cell Type'])
-            parsed_data['Cell Group'].extend(data_inst['Cell Group'])
-            parsed_data['Anatomical Location'].extend(data_inst['Anatomical Location'])
-
-
-        with open(result_dir + "chr_{}_functional_annotations.pkl".format(i + 1), 'wb') as writer:
-            pickle.dump(parsed_data, writer, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-"""
-Returns the counts of each chromatin function in each segment from naive and opt segmentations
-"""
 def find_functional_groupings_per_segments(chrm, tr, opt_seg_csv, naive_seg_csv):
+    """
+    Returns the counts of each chromatin function in each segment from naive and opt segmentations
+    """
     tr_map = Transcription_factor_mapping_18_State()
 
+    # Get segment boundaries opt
     bounds_opt = []
     with open(opt_seg_csv, 'r+') as f:
         reader = csv.reader(f, delimiter=',', lineterminator='\n')
         for i, row in enumerate(reader):
             if int(row[0]) == chrm:
-                bounds_opt.append(row[2])
+                bounds_opt.append((int(row[1]), int(row[2])))
 
+    # Get segment boundaries naive
     bounds_naive = []
     with open(naive_seg_csv, 'r+') as f:
         reader = csv.reader(f, delimiter=',', lineterminator='\n')
         for i, row in enumerate(reader):
             if int(row[0]) == chrm:
-                bounds_naive.append(row[3])
+                bounds_naive.append((int(row[2]), int(row[3])))
 
+    # get chromatin data
     with open(RESULTS_COMBINED_DIR_18 + "chr_{}_functional_annotations.pkl".format(chrm), 'rb') as reader:
         results = pickle.load(reader)
 
-    counts_opt = []
-    counts_naive = []
-    count_opt = 0
-    count_naive = 0
+    assert len(bounds_opt) == len(bounds_naive), "Length mismatch in number of segments."
+
+    # Counts opt and counts naive are arrays of size "num segments" where element at index i is how many counts of transcription
+    # factor tr in the ith segment of chrm
+    counts_opt = np.zeros(len(bounds_opt), dtype=int)
+    counts_naive = np.zeros(len(bounds_naive), dtype=int)
     ind_opt = 0
     ind_naive = 0
-    
+
     # Theres a slight miscount here that needs to be fixed (counts_opt and counts_naive should sum to the same thing)
+    test = 0 
     for i in range(len(results['Transcription Factor'])):
         if results['Transcription Factor'][i] == tr:
-            count_opt += 1
-            count_naive += 1
+            test += 1
+            
+            functional_element_interval = (results['Start'][i], results['End'][i])
+            
+            # For naive
+            bounds_naive, counts_naive, ind_naive = interval_intersection_helper(functional_element_interval, 
+            bounds_naive, counts_naive, ind_naive)
 
-        if int(results['End'][i]) > int(bounds_opt[ind_opt]):
-            counts_opt.append(count_opt)
-            count_opt = 0
-            ind_opt += 1
+            # For opt
+            bounds_opt, counts_opt, ind_opt = interval_intersection_helper(functional_element_interval, 
+            bounds_opt, counts_opt, ind_opt)
 
-        if int(results['End'][i]) > int(bounds_naive[ind_naive]):
-            counts_naive.append(count_naive)
-            count_naive = 0
-            ind_naive += 1
+    
+    # Total number of tr occurences needs to be the same regardless of which segment they are counted in
+    assert test == sum(counts_naive) and test == sum(counts_opt)
 
     return counts_naive, counts_opt
 
+
+
+" ----------------------------- PLOTTING FUNCTIONS ----------------------------- "
+"""
+Data_opt and data_naive contain a list for each transcription factor (trs)
+Each of these lists contain same number of elements as there are segments in chrm, with ith element denoting how many occurences of a transcription factor there are in that segment.
+"""
+def plot_kernel_estimates(data_opt, data_naive, trs, chrm):
+    f, axes = plt.subplots(3, 6, figsize=(35, 35), sharex=False)
+    ind = 0
+    for i in range(3):
+        for j in range(6):
+    
+            # tr[15] has no data in chrom 1
+            if ind != 15:
+                sns.kdeplot(data_naive[ind], bw=sum(data_naive[ind]) / 1700, shade=True, ax=axes[i][j], color='lightskyblue')
+                sns.kdeplot(data_opt[ind], bw=sum(data_naive[ind]) / 1700, shade=True, ax=axes[i][j], color='lightcoral')
+
+            axes[i][j].set_yticks([])
+            axes[i][j].set_xticks([])
+            axes[i][j].set_ylim(bottom=0)
+            axes[i][j].set_xlim(0, np.percentile(np.array(data_opt[ind]), 90))
+
+            # Shorten some chromatin state names to fit on the plots
+            if ind == 2:
+                axes[i][j].set_title(
+                    'Flnk. Act. TSS Upstream' + " ({})".format(sum(data_naive[ind])), fontsize=9)
+            elif ind == 3:
+                axes[i][j].set_title(
+                    'Flnk. Act. TSS Downstream' + " ({})".format(sum(data_naive[ind])), fontsize=9)
+            else:
+                axes[i][j].set_title(
+                    trs[ind] + " ({})".format(sum(data_naive[ind])), fontsize=9)
+            ind += 1
+
+    red_patch = mpatches.Patch(color='lightcoral', label='Opt')
+    blue_patch = mpatches.Patch(color='lightskyblue', label='Naive')
+    f.legend(handles=[red_patch, blue_patch])
+    plt.suptitle('Chromatin States Frequency Distribution Across Segments: Chromosome {}'.format(chrm), fontsize=20)
+    plt.show()
 
 """
 Get a list of counts of each transcription factor along the segments of a specific chromosome, and save that data to disc
@@ -283,44 +408,6 @@ def assemble_plot_data(tr_map, chrm, filename):
         print("Serialized")
 
 
-"""
-Data_opt and data_naive contain a list for each transcription factor (trs)
-Each of these lists contain same number of elements as there are segments in chrm, with ith element denoting how many occurences of a transcription factor there are in that segment.
-"""
-def plot_kernel_estimates(data_opt, data_naive, trs, chrm):
-    f, axes = plt.subplots(3, 6, figsize=(35, 35), sharex=True)
-    ind = 0
-    for i in range(3):
-        for j in range(6):
-
-            # tr[15] has no data in chrom 1
-            if ind != 15:
-                sns.kdeplot(data_naive[ind], bw=1, shade=True,
-                            ax=axes[i][j], color='lightskyblue')
-                sns.kdeplot(data_opt[ind], bw=1, shade=True,
-                            ax=axes[i][j], color='lightcoral')
-            axes[i][j].set_yticks([])
-            axes[i][j].set_xticks([])
-            axes[i][j].set_xlim(0, 50)
-            axes[i][j].set_ylim(bottom=0)
-
-            # Shorten some chromatin state names to fit on the plots
-            if ind == 2:
-                axes[i][j].set_title('Flnk. Act. TSS Upstream')
-            elif ind == 3:
-                axes[i][j].set_title('Flnk. Act. TSS Downstream')
-            else:
-                axes[i][j].set_title(trs[ind])
-            ind += 1
-
-    red_patch = mpatches.Patch(color='lightcoral', label='Opt')
-    blue_patch = mpatches.Patch(color='lightskyblue', label='Naive')
-    f.legend(handles=[red_patch, blue_patch])
-    plt.suptitle('Chromatin States Frequency Distribution Across Segments: Chromosome {}'.format(
-        chrm), fontsize=20)
-    plt.show()
-
-
 if __name__ == "__main__":
     FLAGS = parser.parse_args()
     if FLAGS.new:
@@ -339,7 +426,7 @@ if __name__ == "__main__":
         model_18 = False
 
     if len(os.listdir(CHROMATIN_STATES_DIR)) == 0:
-        extract_tar_file(TAR_FILE)
+        extract_tar_file(TAR_FILE, dest_directory="")
 
     if False:
         # Get cell type data
@@ -351,18 +438,19 @@ if __name__ == "__main__":
 
         color_to_cell_type = extract_cell_types(cell_types)
 
-        # Get a list of all the data files
-        source_paths = []
-        entries = sorted(os.listdir(CHROMATIN_STATES_DIR))
-        for entry in entries:
-            entry_path = os.path.join(CHROMATIN_STATES_DIR, entry)
-            source_paths.append(entry_path)
+    # Get a list of all the data files
+    source_paths = []
+    entries = sorted(os.listdir(CHROMATIN_STATES_DIR))
+    for entry in entries:
+        entry_path = os.path.join(CHROMATIN_STATES_DIR, entry)
+        source_paths.append(entry_path)
 
-        print("\nThere are {} data files being processed.\n".format(len(source_paths)))
+    print("\nThere are {} data files being processed.\n".format(len(source_paths)))
 
-        all_data = [{"Start": [], "End": [], "Transcription Factor": [], "Hex Code": [], "Cell Type": [], "Cell Group": [], "Anatomical Location": []} for i in range(NUM_CHRMS)]
-        filenames = ["chr_{}_functional_annotations.pkl".format(i + 1) for i in range(NUM_CHRMS)]
+    all_data = [{"Start": [], "End": [], "Transcription Factor": [], "Hex Code": [], "Cell Type": [], "Cell Group": [], "Anatomical Location": []} for i in range(NUM_CHRMS)]
+    filenames = ["chr_{}_functional_annotations.pkl".format(i + 1) for i in range(NUM_CHRMS)]
 
+    if False:
         for idx, data_file in enumerate(source_paths):
             with gzip.open(data_file, "rb") as f:
                 chromatin_data = f.read().decode("utf-8").split("\n")
@@ -371,8 +459,9 @@ if __name__ == "__main__":
                 # Extract fields
                 extract_chromatin_annotations(chromatin_data, all_data, model_18)
                 
-                # Append cell type info onto chromatin annotations
-                append_cell_data_to_annotations(color_to_cell_type, all_data)
+                if False:
+                    # Append cell type info onto chromatin annotations
+                    append_cell_data_to_annotations(color_to_cell_type, all_data)
 
             for i, filename in enumerate(filenames):
                 with open(filename, 'ab') as writer:
@@ -394,7 +483,7 @@ if __name__ == "__main__":
 
     if False:
         assemble_plot_data(tr_map, chrm, fname)
-
+    
     with open(fname, 'rb') as fp:
         itemlist = pickle.load(fp)
         
@@ -402,5 +491,5 @@ if __name__ == "__main__":
     data_naive = itemlist[1]
     trs = itemlist[2]
 
-    plot_kernel_estimates(data_opt, data_naive, trs. chrm)
+    plot_kernel_estimates(data_opt, data_naive, trs, chrm)
     
