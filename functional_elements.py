@@ -326,7 +326,6 @@ def find_functional_groupings_per_segments(chrm, tr, opt_seg_csv, naive_seg_csv)
     ind_opt = 0
     ind_naive = 0
 
-    # Theres a slight miscount here that needs to be fixed (counts_opt and counts_naive should sum to the same thing)
     test = 0 
     for i in range(len(results['Transcription Factor'])):
         if results['Transcription Factor'][i] == tr:
