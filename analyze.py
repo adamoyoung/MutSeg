@@ -25,12 +25,12 @@ parser.add_argument("--results_dir_path", type=str, default="results", help="pat
 parser.add_argument("--mc_file_path", type=str, default="mc_data.pkl", help="path to chromosome data .pkl file, read-only") #"/home/q/qmorris/youngad2/MutSeg/mc_data_mp.pkl")
 parser.add_argument("--ana_file_path", type=str, default="ana_data.pkl", help="path to analyzsis data .pkl file")
 parser.add_argument("--naive_seg_size", type=int, default=1000000, help="size of segments in naive segmentation (in bp)")
-parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "ann", "zdb", "plt"], default="seg")
+parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "ann", "plt"], default="seg")
 parser.add_argument("--csv_dir_path", type=str, default="for_adamo", help="only useful in \'ann\' mode, path to directory where csvs that need to be annotated will be")
 parser.add_argument("--num_procs", type=int, default=mp.cpu_count(), help="only useful in \'ann\' mode, number of process to fork")
 parser.add_argument("--drop_zeros", type=lambda x:bool(strtobool(x)), default=True)
 parser.add_argument("--plot_dir_path", type=str, default="plots", help="only useful in \'plt\' mode")
-parser.add_argument("--ana_mode", type=str, choices=["sample_freqs", "counts"], default="sample_freqs")
+parser.add_argument("--ana_mode", type=str, choices=["sample_freqs", "counts", "tumour_freqs"], default="sample_freqs")
 # parser.add_argument("--mut_thresh", type=int, default=1000)
 
 
@@ -596,9 +596,6 @@ if __name__ == "__main__":
 	# elif FLAGS.program_mode == "ann":
 	# 	# modify input csvs such that each mutation is annotated with an optimal segment
 	# 	annotate_segs(FLAGS.ana_file_path, FLAGS.naive_seg_size, FLAGS.csv_dir_path, FLAGS.num_procs, FLAGS.drop_zeros)
-	# elif FLAGS.program_mode == "zdb":
-	# 	# debug problems with zero mutation segments
-	# 	zero_segs(FLAGS.ana_file_path, FLAGS.naive_seg_size)
 	elif FLAGS.program_mode == "plt":
 		make_plots(FLAGS.ana_file_path, FLAGS.plot_dir_path, FLAGS.naive_seg_size, FLAGS.drop_zeros)
 	else:

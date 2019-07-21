@@ -59,13 +59,13 @@ class Segmentation:
 	def get_num_segs(self):
 		raise NotImplementedError
 
-	def _interpret_ana_mode(self, ana_mode):
-		if ana_mode == "sample_freqs":
-			return 1
-		elif ana_mode == "counts":
+	def _interpret_mode(self, mode):
+		if mode == "counts" or mode == "tumour_freqs":
 			return 0
+		elif mode == "sample_freqs":
+			return 1
 		else:
-			raise ValueError("invalid ana_mode")
+			raise ValueError("invalid mode")
 
 
 class NaiveSegmentation(Segmentation):
@@ -76,7 +76,7 @@ class NaiveSegmentation(Segmentation):
 		self.num_nz_segs = num_nz_segs # only used for naive
 
 	def get_mut_ints(self, drop_zeros, ana_mode):
-		mode = self._interpret_ana_mode(ana_mode)
+		mode = self._interpret_mode(ana_mode)
 		if drop_zeros:
 			nz_mut_ints = self.mut_ints[mode][self.nz_seg_idx]
 			return nz_mut_ints
@@ -107,7 +107,7 @@ class OptimalSegmentation(Segmentation):
 		self.group_by = group_by
 
 	def get_mut_ints(self, ana_mode):
-		mode = self._interpret_ana_mode(ana_mode)
+		mode = self._interpret_mode(ana_mode)
 		return self.mut_ints[mode]
 
 	def get_mut_bounds(self):
@@ -130,12 +130,14 @@ class Chromosome:
 		self.type_to_idx = {} # cancer type to index in mut_array
 		for idx, typ in enumerate(sorted(self.cancer_types)):
 			self.type_to_idx[typ] = idx
+		self.unique_pos_count = None
 		self.mut_array = None # numpy array
 		self.mut_pos = None # numpy array
 		self.pos_to_idx = None # numpy array
 		self.group_by = None # int
 		self.opt_segmentations = {} # dict of optimal segmentation objects, indexed by num_segs
 		self.naive_segmentations = {} # dict of naive segmentation objects, indexed by naive_seg_size
+		self.tumour_totals = None
 
 	def get_chrm_len(self):
 		return self.length
@@ -192,32 +194,32 @@ class Chromosome:
 		else:
 			return self.mut_pos
 
-	# def interpret_mode(self, mode):
-	# 	if mode == "seg":
-	# 		return self.seg_mode
-	# 	elif mode == "ana":
-	# 		return self.ana_mode
-	# 	else:
-	# 		raise ValueError
+	def _interpret_mode(self, mode):
+		if mode == "counts" or mode == "tumour_freqs":
+			return 0
+		elif mode == "sample_freqs":
+			return 1
+		else:
+			raise ValueError("invalid mode")
 
 	# def update(self, pos, typ, ints):
 	# 	self.mut_array[self.pos_to_idx[pos]][self.type_to_idx[typ]] += ints
 
 	def update(self, dfs):
+		""" df_tups are tuples of (file_name, df) """
 		for d in range(len(dfs)):
 			df = dfs[d]
+			# compute counts/freqs
 			sample_ints = df["ints"].sum()
-			df = df[df["chrm"] == self.chrm_id]
-			pos = df["pos"].to_numpy()
-			typ = df["typ"].to_numpy()
-			ints = df["ints"].to_numpy()
-			freqs = ints / sample_ints
-			s_1 = df["ints"].sum()
-			s_2 = np.sum(df["ints"].to_numpy())
-			s_3 = np.sum(df["ints"].values)
-			for i in range(df.shape[0]):
+			cdf = df[df["chrm"] == self.chrm_id]
+			pos = cdf["pos"].to_numpy()
+			typ = cdf["typ"].to_numpy()
+			ints = cdf["ints"].to_numpy()
+			sample_freqs = ints / sample_ints
+			for i in range(cdf.shape[0]):
 				self.mut_array[0][self.pos_to_idx[pos[i]]][self.type_to_idx[typ[i]]] += ints[i]
-				self.mut_array[1][self.pos_to_idx[pos[i]]][self.type_to_idx[typ[i]]] += freqs[i]
+				self.mut_array[1][self.pos_to_idx[pos[i]]][self.type_to_idx[typ[i]]] += sample_freqs[i]
+		self.tumour_totals = np.sum(self.mut_array[0], axis=0)[np.newaxis, ...]
 		assert np.sum(self.mut_array[0], axis=1).all()
 		assert np.sum(self.mut_array[1], axis=1).all()
 
@@ -237,13 +239,20 @@ class Chromosome:
 		assert np.sum(self.mut_array_g[0], axis=1).all()
 		assert np.sum(self.mut_array_g[1], axis=1).all()
 
-	def mut_array_to_bytes(self):
+	def mut_array_to_bytes(self, mode):
 		itemsize = np.dtype(FLOAT_T).itemsize
+		mode_idx = self._interpret_mode(mode)
 		if self.group_by:
-			barray = bytes(self.mut_array_g[self.mode])
+			mut_array = self.mut_array_g[mode_idx]
+			if mode == "tumour_freqs":
+				mut_array = mut_array / self.tumour_totals
+			barray = bytes(mut_array)
 			assert( len(barray) == self.unique_pos_count_g*len(self.cancer_types)*itemsize )
 		else:
-			barray = bytes(self.mut_array[self.mode])
+			mut_array = self.mut_array[mode_idx]
+			if mode == "tumour_freqs":
+				mut_array = mut_array / self.tumour_totals
+			barray = bytes(mut_array)
 			assert( len(barray) == self.unique_pos_count*len(self.cancer_types)*itemsize )
 		return barray
 
@@ -326,21 +335,12 @@ class Chromosome:
 			del self.mut_array
 			del self.mut_pos
 
-	# def get_naive_seg_mut_ints(self, naive_seg_size, drop_zeros):
-
-	# 	naive_seg = self.get_naive_seg(naive_seg_size)
-	# 	naive_seg_mut_ints = naive_seg.seg_mut_ints
-	# 	if drop_zeros:
-	# 		naive_seg_mut_ints = naive_seg_mut_ints[naive_seg.nz_seg_idx]
-	# 	assert naive_seg_mut_ints.shape[0] == self.get_num_segs(naive_seg_size, drop_zeros)
-	# 	return naive_seg_mut_ints
-
-	# def get_naive_nz_seg_mut_ints(self, naive_seg_size):
-
-	# 	naive_seg = self.get_naive_seg(naive_seg_size)
-	# 	num_segs = self.get_num_segs(naive_seg_size)
-	# 	nz_seg_idx = np.nonzero(np.sum(naive_seg.seg_mut_ints, axis=1))[0]
-	# 	naive_num_nz_segs = len(nz_seg_idx)
-	# 	assert naive_num_nz_segs <= num_segs
-	# 	assert naive_num_nz_segs > 0
-	# 	return naive_seg.seg_mut_ints[nz_seg_idx]
+	def delete_non_run_data(self):
+		# del self.unique_pos_count
+		del self.mut_array
+		del self.mut_pos
+		del self.pos_to_idx
+		if self.group_by:
+			# del self.unique_pos_count_g
+			del self.mut_array_g
+			del self.mut_pos_g
