@@ -67,6 +67,10 @@ class Segmentation:
 		else:
 			raise ValueError("invalid mode")
 
+	def _convert_cos_to_tfs(self, mut_ints_co):
+		tumour_totals = np.sum(mut_ints_co, axis=0)
+		return mut_ints_co / tumour_totals[np.newaxis, ...]
+
 
 class NaiveSegmentation(Segmentation):
 
@@ -79,9 +83,12 @@ class NaiveSegmentation(Segmentation):
 		mode = self._interpret_mode(ana_mode)
 		if drop_zeros:
 			nz_mut_ints = self.mut_ints[mode][self.nz_seg_idx]
-			return nz_mut_ints
+			mut_ints = nz_mut_ints
 		else:
-			return self.mut_ints[mode]
+			mut_ints = self.mut_ints[mode]
+		if ana_mode == "tumour_freqs":
+			mut_ints = self._convert_cos_to_tfs(mut_ints)
+		return mut_ints
 
 	def get_mut_bounds(self, drop_zeros):
 		if drop_zeros:
@@ -108,7 +115,10 @@ class OptimalSegmentation(Segmentation):
 
 	def get_mut_ints(self, ana_mode):
 		mode = self._interpret_mode(ana_mode)
-		return self.mut_ints[mode]
+		mut_ints = self.mut_ints[mode]
+		if ana_mode == "tumour_freqs":
+			mut_ints = self._convert_cos_to_tfs(mut_ints)
+		return mut_ints
 
 	def get_mut_bounds(self):
 		return self.mut_bounds

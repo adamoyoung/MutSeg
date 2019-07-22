@@ -21,15 +21,16 @@ import seaborn as sns
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--results_dir_path", type=str, default="results", help="path to directory with S_s, E_f, and E_s files") #"/scratch/q/qmorris/youngad2/results")
-parser.add_argument("--mc_file_path", type=str, default="mc_data.pkl", help="path to chromosome data .pkl file, read-only") #"/home/q/qmorris/youngad2/MutSeg/mc_data_mp.pkl")
-parser.add_argument("--ana_file_path", type=str, default="ana_data.pkl", help="path to analyzsis data .pkl file")
+parser.add_argument("--run_dir_path", type=str, default="runs_kat/jul_21_sf", help="path to directory that holds: ana file, results dir, plots dir")
+parser.add_argument("--results_dir_name", type=str, default="results", help="name of directory with S_s, E_f, and E_s files") #"/scratch/q/qmorris/youngad2/results")
+parser.add_argument("--mc_file_path", type=str, default="mc_data_kat.pkl", help="path to chromosome data .pkl file, read-only") #"/home/q/qmorris/youngad2/MutSeg/mc_data_mp.pkl")
+parser.add_argument("--ana_file_name", type=str, default="ana_data.pkl", help="path to analyzsis data .pkl file")
 parser.add_argument("--naive_seg_size", type=int, default=1000000, help="size of segments in naive segmentation (in bp)")
 parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "ann", "plt"], default="seg")
 parser.add_argument("--csv_dir_path", type=str, default="for_adamo", help="only useful in \'ann\' mode, path to directory where csvs that need to be annotated will be")
 parser.add_argument("--num_procs", type=int, default=mp.cpu_count(), help="only useful in \'ann\' mode, number of process to fork")
 parser.add_argument("--drop_zeros", type=lambda x:bool(strtobool(x)), default=True)
-parser.add_argument("--plot_dir_path", type=str, default="plots", help="only useful in \'plt\' mode")
+parser.add_argument("--plot_dir_name", type=str, default="plots", help="only useful in \'plt\' mode")
 parser.add_argument("--ana_mode", type=str, choices=["sample_freqs", "counts", "tumour_freqs"], default="sample_freqs")
 # parser.add_argument("--mut_thresh", type=int, default=1000)
 
@@ -159,7 +160,7 @@ def compute_cmis(ana_data_path, naive_seg_size, drop_zeros, ana_mode):
 	H is entropy
 	"""
 	# load chrm data
-	with open(FLAGS.ana_file_path, "rb") as pkl_file:
+	with open(ana_file_path, "rb") as pkl_file:
 		chrms = pickle.load(pkl_file)
 	assert len(chrms) == chrmlib.NUM_CHRMS
 	print("loaded chrms")
@@ -261,14 +262,14 @@ def compute_tmi_from_ints_array(ints_array, num_segs):
 	return I_of_B_and_T
 
 
-def compute_tmis(mc_data_path, naive_seg_size, drop_zeros, ana_mode):
+def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode):
 	"""
 	tmi -- total mutual information I(B;T)
 	I(B;T) = I(B;T|C) - H(C|T) - H(C|B) + H(C|B,T) + H(C)
 	does into log space for numerical stability
 	"""
 	# load chrm data
-	with open(FLAGS.ana_file_path, "rb") as pkl_file:
+	with open(ana_file_path, "rb") as pkl_file:
 		chrms = pickle.load(pkl_file)
 	assert len(chrms) == chrmlib.NUM_CHRMS
 	print("loaded chrms")
@@ -323,14 +324,14 @@ def annotate_files_func(proc_inputs):
 	return None
 
 
-def annotate_segs(chrms, naive_seg_size, csv_dir_path, num_procs, drop_zeros):
+def annotate_segs(ana_file_path, naive_seg_size, csv_dir_path, num_procs, drop_zeros):
 	"""
 	annotate mutations in original csv files with optimal segment location
 	assumes these csv files are valid
 	note that both naive and optimal segmentations have 1-based indexing in the files
 	"""
 	# load chrm data
-	with open(FLAGS.ana_file_path, "rb") as pkl_file:
+	with open(ana_file_path, "rb") as pkl_file:
 		chrms = pickle.load(pkl_file)
 	assert len(chrms) == chrmlib.NUM_CHRMS
 	print("loaded chrms")
@@ -564,39 +565,49 @@ def plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros):
 		plt.savefig(plt_path)
 		plt.clf()
 
+
 def make_plots(ana_file_path, plot_dir_path, naive_seg_size, drop_zeros):
 
-	assert os.path.isdir(plot_dir_path)
+	assert os.path.isfile(ana_file_path)
+	os.makedirs(plot_dir_path, exist_ok=True)
 	with open(ana_file_path, "rb") as pkl_file:
 		chrms = pickle.load(pkl_file)
 	plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros)
 	plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros)
 
+
 if __name__ == "__main__":
 
 	FLAGS = parser.parse_args()
+	print(FLAGS)
+
+	assert os.path.isdir(FLAGS.run_dir_path)
+	results_dir_path = os.path.join(FLAGS.run_dir_path,FLAGS.results_dir_name)
+	# mc_file_path = os.path.join(FLAGS.run_dir_path,FLAGS.mc_file_name)
+	ana_file_path = os.path.join(FLAGS.run_dir_path,FLAGS.ana_file_name)
+	plot_dir_path = os.path.join(FLAGS.run_dir_path,FLAGS.plot_dir_name)
 
 	if FLAGS.program_mode == "seg":
 		# interpret segmentation results and save them in an mc_data file of chromosomes
-		save_seg_results(FLAGS.results_dir_path, FLAGS.mc_file_path, FLAGS.ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros)
+		save_seg_results(results_dir_path, FLAGS.mc_file_path, ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros)
 	elif FLAGS.program_mode == "cmi":
 		# compute conditional mutual information for optimal and naive
-		optimal_cmi, naive_cmi = compute_cmis(FLAGS.ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode)
+		optimal_cmi, naive_cmi = compute_cmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode)
 		print("drop_zeros == ", FLAGS.drop_zeros)
 		print("optimal cmi", nats_to_bits(optimal_cmi))
 		print("naive cmi", nats_to_bits(naive_cmi))
 		print("difference", nats_to_bits(optimal_cmi-naive_cmi))
 	elif FLAGS.program_mode == "tmi":
 		# compute total mutual information for optimal and naive
-		optimal_tmi, naive_tmi = compute_tmis(FLAGS.ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode)
+		optimal_tmi, naive_tmi = compute_tmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode)
 		print("drop_zeros == ", FLAGS.drop_zeros)
 		print("optimal tmi", nats_to_bits(optimal_tmi))
 		print("naive tmi", nats_to_bits(naive_tmi))
 		print("difference", nats_to_bits(optimal_tmi-naive_tmi))
 	# elif FLAGS.program_mode == "ann":
 	# 	# modify input csvs such that each mutation is annotated with an optimal segment
-	# 	annotate_segs(FLAGS.ana_file_path, FLAGS.naive_seg_size, FLAGS.csv_dir_path, FLAGS.num_procs, FLAGS.drop_zeros)
+	# 	annotate_segs(ana_file_path, FLAGS.naive_seg_size, FLAGS.csv_dir_path, FLAGS.num_procs, FLAGS.drop_zeros)
 	elif FLAGS.program_mode == "plt":
-		make_plots(FLAGS.ana_file_path, FLAGS.plot_dir_path, FLAGS.naive_seg_size, FLAGS.drop_zeros)
+		make_plots(ana_file_path, plot_dir_path, FLAGS.naive_seg_size, FLAGS.drop_zeros)
 	else:
 		raise NotImplementedError

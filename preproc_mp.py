@@ -67,6 +67,7 @@ def proc_files_func(proc_input):
 										"cancer_type": "typ", 
 										"Count": "ints"})
 		# correct for kataegis
+		# TBD implicitly assumes all mutations at one location are the same, regardless of type (i.e. A->C)
 		orig_num = df.shape[0]
 		file_name = os.path.splitext(os.path.basename(os.path.normpath(file_path)))[0]
 		# print(f">>> {file_name}")
