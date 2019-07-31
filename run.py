@@ -35,38 +35,43 @@ parser.add_argument("--max_time", type=int, default=24, choices=list(range(1,25)
 parser.add_argument("--exe_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/segmentation", help="path to segmentation executable")
 parser.add_argument("--script_dir_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/scripts", help="directory for creating bash scripts")
 parser.add_argument("--overwrite", type=lambda x:bool(strtobool(x)), default=False)
+parser.add_argument("--tumour_set", type=str, choices=["all", "reduced"], default="all", help="set of tumour types to use")
+parser.add_argument("--tv_split", type=str, choices=["all", "train"], default="all")
+
 
 if __name__ == "__main__":
 
 	FLAGS = parser.parse_args()
-	assert os.path.isdir(FLAGS.cfile_dir_path)
-	mode_dir_path = os.path.join(FLAGS.cfile_dir_path,FLAGS.mode)
-	assert os.path.isdir(mode_dir_path)
-	mc_file_path = os.path.join(mode_dir_path,"run_data.pkl")
-	assert os.path.isfile(mc_file_path)
-	with open(mc_file_path, "rb") as pkl_file:
-		mc_data = pickle.load(pkl_file)
-	assert len(mc_data) == chrmlib.NUM_CHRMS
+	if FLAGS.tumour_set == "all":
+		cfile_dir_path = FLAGS.cfile_dir_path
+	else:
+		cfile_dir_path = FLAGS.cfile_dir_path + "_red"
+	cfile_dir_path = os.path.join(cfile_dir_path,FLAGS.mode,FLAGS.tv_split)
+	print(cfile_dir_path)
+	assert os.path.isdir(cfile_dir_path)
+	run_file_path = os.path.join(cfile_dir_path,"run_data.pkl")
+	assert os.path.isfile(run_file_path)
+	with open(run_file_path, "rb") as pkl_file:
+		run_data = pickle.load(pkl_file)
+	assert len(run_data) == chrmlib.NUM_CHRMS
 
 	if FLAGS.chrm_id == -1:
 		cfile_paths = []
-		chrms = mc_data
+		chrms = run_data
 		for c in range(chrmlib.NUM_CHRMS):
 			cfile_name = "{}_{}.dat".format(chrmlib.CFILE_BASE,c)
-			cfile_paths.append(os.path.join(mode_dir_path,cfile_name))
+			cfile_paths.append(os.path.join(cfile_dir_path,cfile_name))
 	else:
 		# do a specific chromosome
 		cfile_name = "{}_{}.dat".format(chrmlib.CFILE_BASE,FLAGS.chrm_id)
-		cfile_paths = [os.path.join(mode_dir_path,cfile_name)]
-		chrms = [mc_data[FLAGS.chrm_id]]
+		cfile_paths = [os.path.join(cfile_dir_path,cfile_name)]
+		chrms = [run_data[FLAGS.chrm_id]]
 	
 	# attributes that are always the same
 	assert os.path.isfile(FLAGS.exe_path)
 	exe_path = FLAGS.exe_path
 	quick_test = 0
 	mp = FLAGS.num_cores
-	#total_ks = [chrm_len // FLAGS.seg_size + chrm_len % FLAGS.seg_size for chrm_len in chrmlib.CHRM_LENS]
-	#total_m = sum([chrm.get_unique_pos_count() for chrm in mc_data])
 	seg_size = FLAGS.naive_seg_size
 	prev_k = 0
 	if not FLAGS.overwrite:
@@ -78,6 +83,7 @@ if __name__ == "__main__":
 		output_dir_path += "_sf"
 	elif FLAGS.mode == "tumour_freqs":
 		output_dir_path += "_tf"
+	output_dir_path = os.path.join(output_dir_path,FLAGS.tv_split)
 	os.makedirs(output_dir_path, exist_ok=True)
 	results_dir_path = os.path.join(output_dir_path,"results")
 	os.makedirs(results_dir_path, exist_ok=True)
@@ -90,15 +96,26 @@ if __name__ == "__main__":
 	assert FLAGS.num_cores <= 80
 	num_cores = FLAGS.num_cores
 	script_dir_path = FLAGS.script_dir_path
+	if FLAGS.mode == "counts":
+		script_dir_path += "_co"
+	elif FLAGS.mode == "sample_freqs":
+		script_dir_path += "_sf"
+	elif FLAGS.mode == "tumour_freqs":
+		script_dir_path += "_tf"
+	script_dir_path += "_" + FLAGS.tv_split
 	os.makedirs(script_dir_path, exist_ok=True)
-	
+	if FLAGS.tumour_set == "all":
+		tumour_list = sorted(chrmlib.ALL_SET)
+	else: # FLAGS.tumour_set == "reduced"
+		tumour_list = sorted(chrmlib.REDUCED_SET)
+
 	for i in range(len(cfile_paths)):
 		# create the script
 		cfile_path = cfile_paths[i]
 		assert os.path.isfile(cfile_path)
 		muts_file_name = cfile_paths[i]
 		m = chrms[i].get_unique_pos_count()
-		t = chrms[i].get_num_cancer_types()
+		t = len(tumour_list)
 		k = chrms[i]._get_num_segs(seg_size)
 		chrm_id = chrms[i].get_chrm_id()
 		e_f_fp = os.path.join(results_dir_path,"E_f_chrm_{}.dat".format(chrm_id))
