@@ -32,7 +32,7 @@ parser.add_argument("--overwrite", type=lambda x:bool(strtobool(x)), default=Fal
 parser.add_argument("--tumour_set", type=str, choices=["all", "reduced", "small"], default="all", help="set of tumour types to use")
 parser.add_argument("--create_cfiles", type=lambda x:bool(strtobool(x)), default=True)
 parser.add_argument("--valid_frac", type=float, default=0.3)
-# parser.add_argument("--tv_split", type=str, choices=["all", "valid"], default="all")
+parser.add_argument("--ct_file_path", type=str, default="dsets/cell_type.csv")
 
 
 def get_pseudo_median_fn(col_name):
@@ -243,7 +243,7 @@ def preproc(src_dir_path, kat_file_path, donor_file_path, group_by, num_procs, v
 			final_train_num = total_num - final_valid_num
 			assert final_valid_num >= 0 and final_train_num > 0, (final_valid_num, final_train_num)
 			if final_valid_num == 0:
-				print(tumour_type)
+				print(tumour_type, "final_valid_num is 0")
 			# assign stuff to train and valid
 			cur_train_num, cur_valid_num = 0, 0
 			cur_train_idx, cur_valid_idx = [], []
@@ -251,18 +251,24 @@ def preproc(src_dir_path, kat_file_path, donor_file_path, group_by, num_procs, v
 			while cur_idx < len(donors_id):
 				assert cur_valid_num + cur_train_num < total_num
 				next_num = donors_num[-1-cur_idx]
-				if cur_valid_num + next_num < final_valid_num and cur_valid_num < cur_train_num:
-					cur_valid_idx.append(donors_idx[-1-cur_idx])
+				if cur_valid_num + next_num <= final_valid_num and cur_valid_num < cur_train_num:
+					cur_valid_idx.extend(donors_idx[-1-cur_idx])
 					cur_valid_num += next_num
 				else: 
-					cur_train_idx.append(donors_idx[-1-cur_idx])
+					cur_train_idx.extend(donors_idx[-1-cur_idx])
 					cur_train_num += next_num
 				cur_idx += 1
 			assert cur_valid_num + cur_train_num == total_num
+			if cur_valid_num == 0:
+				print(tumour_type, "cur_valid_num is 0")
 			train_num.append(cur_train_num)
 			valid_num.append(cur_valid_num)
 			train_idx.append(cur_train_idx)
 			valid_idx.append(cur_valid_idx)
+		print(train_num)
+		print(train_idx)
+		print(valid_num)
+		print(valid_idx)
 	else:
 		valid_idx = None
 	for c in range(chrmlib.NUM_CHRMS):
@@ -275,35 +281,6 @@ def preproc(src_dir_path, kat_file_path, donor_file_path, group_by, num_procs, v
 		cur_time = time.time()
 		print( "[{0:.0f}] grouped mutations".format(cur_time-beg_time) )
 	return chrms
-
-
-# def proc_files_func_alt(proc_input):
-	
-# 	proc_start = time.time()
-# 	proc_id, proc_dfs = proc_input[0], proc_input[1]
-# 	proc_df_count = 0
-# 	proc_mut_entries = []
-# 	proc_typs_set = set()
-# 	proc_mut_pos = [set() for i in range(chrmlib.NUM_CHRMS)]
-# 	for df in proc_dfs:
-# 		desired_entries = ["chrm", "pos", "typ"]
-# 		assert (df["chrm"] >= 1).all()
-# 		assert (df["chrm"] <= chrmlib.NUM_CHRMS).all()
-# 		df = df[desired_entries]
-# 		cd = pd.DataFrame({"ints": np.ones(df.shape[0], dtype=chrmlib.FLOAT_T)})
-# 		df = pd.concat([df,cd], axis=1)
-# 		df["chrm"] = df["chrm"] - 1
-# 		df["pos"] = df["pos"] - 1
-# 		df = df.groupby(by=["chrm", "pos", "typ"]).sum()
-# 		df = df.reset_index()
-# 		# update stuff
-# 		proc_typs_set = proc_typs_set.union(set(df["typ"]))
-# 		for c in range(chrmlib.NUM_CHRMS):
-# 			proc_mut_pos[c] = proc_mut_pos[c].union(set(df[df["chrm"] == c]["pos"]))
-# 		proc_mut_entries.append(df)
-# 		proc_df_count += 1
-# 	proc_end = time.time()
-# 	return proc_df_count, proc_mut_entries, proc_typs_set, proc_mut_pos
 
 
 def get_convert_chrm_fn():
@@ -382,7 +359,7 @@ def preproc_alt(alt_file_path):
 	cur_time = time.time()
 	print( "[{0:.0f}] initialized chromosomes with new mut arrays".format(cur_time-beg_time) )
 	for c in range(chrmlib.NUM_CHRMS):
-		chrms[c].update(mut_entries)
+		chrms[c].update(mut_entries, None)
 	cur_time = time.time()
 	print( "[{0:.0f}] filled mut arrays with mut entry data".format(cur_time-beg_time) )
 	return chrms
@@ -394,11 +371,11 @@ def proc_sig_files_func(proc_input):
 	proc_id, proc_file_paths = proc_input[0], proc_input[1]
 	proc_file_count = 0
 	proc_sig_entries = []
-	col_names = ["chrm", "start", "end", "sig_typ", "rand1", "rand2", "rand3", "rand4", "rand5"]
-	desired_cols = ["chrm", "start", "end", "sig_typ"]
+	# col_names = ["chrm", "start", "end", "sig_typ", "rand1", "rand2", "rand3", "rand4", "rand5"]
+	col_names = ["chrm", "start", "end", "sig_typ"]
+	file_name = os
 	for file_path in proc_file_paths:
-		df = pd.read_csv(file_path, sep="\t", skiprows=1, header=None, names=col_names)
-		df = df[desired_cols]
+		df = pd.read_csv(file_path, sep="\t", header=None, names=col_names)
 		df["new_chrm"] = df["chrm"].map(get_convert_chrm_fn())
 		df.dropna(subset=["new_chrm"], axis=0, inplace=True)
 		df.drop(columns=["chrm"], inplace=True)
@@ -406,30 +383,57 @@ def proc_sig_files_func(proc_input):
 		df = df.astype({"chrm": int, "start": int, "end": int, "sig_typ": str})
 		assert (df["chrm"] >= 1).all()
 		assert (df["chrm"] <= chrmlib.NUM_CHRMS).all()
-		# make chrms and positions 0-based
+		# make chrms and end positions 0-based -- start is already
 		df["chrm"] = df["chrm"] - 1
-		df["start"] = df["start"] - 1
+		# df["start"] = df["start"] - 1
 		df["end"] = df["end"] - 1
+		ct_id =  os.path.splitext(os.path.basename(os.path.normpath(file_path)))[0][0:4]
+		df["ct_id"] = np.array(df.shape[0]*[ct_id])
 		proc_sig_entries.append(df)
 		proc_file_count += 1
 	proc_end = time.time()
 	return proc_file_count, proc_sig_entries
 
 
-def preproc_sig(sig_dir_path, num_procs):
+def read_cell_type(ct_file_path):
+
+	assert os.path.isfile(ct_file_path)
+	df = pd.read_csv(ct_file_path, skiprows=[0,1])[["Unnamed: 1", "Unnamed: 6"]]
+	df.dropna(inplace=True)
+	df.rename(index=str, columns={"Unnamed: 1": "ct_id", "Unnamed: 6": "ct_name"}, inplace=True)
+	def valid_id(ct_id):
+		if not isinstance(ct_id, str) or not (ct_id[0:2] == "E0" or ct_id[0:2] == "E1"):
+			return False
+		else:
+			return True
+	df["valid_id"] = df["ct_id"].map(valid_id)
+	df = df[df["valid_id"]]
+	df.drop(columns=["valid_id"], inplace=True)
+	return df
+
+
+def preproc_sig(sig_dir_path, ct_file_path, num_procs):
 
 	assert os.path.isdir(sig_dir_path)
 	beg_time = time.time()
 	print("[0] starting preproc_sig")
+	# read in the cell types
+	ct_df = read_cell_type(ct_file_path)
+	ct_set = set(ct_df["ct_id"])
+	print(sorted(ct_set))
+	# read in the entries
 	file_paths = []
+	file_ct_ids = []
 	file_count = 0
 	entries = sorted(os.listdir(sig_dir_path))
 	for entry in entries:
 		entry_path = os.path.join(sig_dir_path,entry)
-		if os.path.isfile(entry_path):
+		if os.path.isfile(entry_path) and entry[0:4] in ct_set:
 			file_paths.append(entry_path)
+			file_ct_ids.append(entry[0:4])
 			file_count += 1
-	assert file_count == len(entries)
+	assert file_count <= len(entries)
+	print(sorted(file_ct_ids))
 	cur_time = time.time()
 	num_per_proc = [len(file_paths) // num_procs for i in range(num_procs)]
 	for i in range(len(file_paths) % num_procs):
@@ -488,7 +492,6 @@ if __name__ == "__main__":
 		print(">>> creating new mc_data (with possible overwrite)")
 		chrms = preproc(FLAGS.src_dir_path, FLAGS.kat_file_path, FLAGS.donor_file_path, FLAGS.group_by, FLAGS.num_procs, FLAGS.valid_frac)
 		chrmlib.save_mc_data(FLAGS.mc_dir_path, chrms)
-	quit()
 	# do alternate mutation data
 	if not FLAGS.overwrite and os.path.isdir(FLAGS.mc_alt_dir_path):
 		print(">>> alt data exists, no need to load")
@@ -503,7 +506,7 @@ if __name__ == "__main__":
 		pass
 	else:
 		print(">>> creating new sig data (with possible overwrite)")
-		sig_df = preproc_sig(FLAGS.sig_dir_path, FLAGS.num_procs)
+		sig_df = preproc_sig(FLAGS.sig_dir_path, FLAGS.ct_file_path, FLAGS.num_procs)
 		sig_df.to_pickle(FLAGS.df_sig_file_path, protocol=pickle.HIGHEST_PROTOCOL)
 	# do the cfiles directory
 	if FLAGS.create_cfiles:

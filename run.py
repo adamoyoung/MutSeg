@@ -31,7 +31,7 @@ parser.add_argument("--chrm_id", type=int, default=-1, choices=list(range(-1,22)
 parser.add_argument("--naive_seg_size", type=int, default=1000000) # 1 Megabase
 parser.add_argument("--num_cores", type=int, default=80, choices=list(range(1,81)), help="number of logical cores required on scinet, should be <=80")
 parser.add_argument("--output_dir_path", type=str, default="/scratch/q/qmorris/youngad2/{}".format(today_date()))
-parser.add_argument("--max_time", type=int, default=24, choices=list(range(1,25)), help="wall time in hours, should be <=24")
+parser.add_argument("--max_time", type=int, default=12, choices=list(range(1,25)), help="wall time in hours, should be <=24")
 parser.add_argument("--exe_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/segmentation", help="path to segmentation executable")
 parser.add_argument("--script_dir_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/scripts", help="directory for creating bash scripts")
 parser.add_argument("--overwrite", type=lambda x:bool(strtobool(x)), default=False)

@@ -45,6 +45,7 @@ REDUCED_SET = {'Bone-Osteosarc', 'Breast-AdenoCA', 'ColoRect-AdenoCA', 'Eso-Aden
 SMALL_SET = {"Breast-AdenoCA", "CNS-Oligo", "CNS-PiloAstro", "Liver-HCC", "Ovary-AdenoCA", "Panc-Endocrine"}
 
 def save_mc_data(mc_dir_path, chrms):
+	""" this is just for mc_data, not ana_data or run_data """
 	assert len(chrms) == NUM_CHRMS
 	os.makedirs(mc_dir_path, exist_ok=True)
 	for chrm_id, chrm in enumerate(chrms):
@@ -53,6 +54,7 @@ def save_mc_data(mc_dir_path, chrms):
 			pickle.dump(chrm, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def load_mc_data(mc_dir_path):
+	""" this is just for mc_data, not ana_data or run_data """
 	chrms = []
 	assert os.path.isdir(mc_dir_path)
 	for chrm_id in range(NUM_CHRMS):
@@ -117,7 +119,7 @@ class Segmentation:
 			raise ValueError("invalid mode")
 
 	def _convert_cos_to_freqs(self, mut_ints_co):
-		totals = np.sum(mut_ints_co, axis=0)
+		totals = np.sum(mut_ints_co, axis=0) + EPS
 		return mut_ints_co / totals[np.newaxis, ...]
 
 
@@ -201,13 +203,16 @@ class NaiveSigSegmentation(NaiveSegmentation):
 		super(NaiveSigSegmentation, self).__init__(type_to_idx, num_segs, seg_mut_ints, None, seg_bp_bounds, nz_seg_idx, num_nz_segs)
 
 	def get_mut_ints(self, drop_zeros, ana_mode, sig_list):
-		""" mut ints is only M x T, not 2 x M x T"""
+		""" mut ints is only M x T, not 2 x M x T. sig_list can be None"""
 		assert ana_mode != "sample_freqs"
-		sig_idx = np.zeros([len(sig_list)], dtype=INT_T)
-		for s in range(len(sig_list)):
-			sig_idx[s] = self.type_to_idx[sig_list[s]]
+		if sig_list:
+			sig_idx = np.zeros([len(sig_list)], dtype=INT_T)
+			for s in range(len(sig_list)):
+				sig_idx[s] = self.type_to_idx[sig_list[s]]
+		else:
+			sig_idx = np.arange(len(self.type_to_idx), dtype=INT_T)
 		if drop_zeros:
-			nz_mut_ints = self.mut_ints[self.nz_seg_idx][:,tumour_idx]
+			nz_mut_ints = self.mut_ints[self.nz_seg_idx][:,sig_idx]
 			mut_ints = nz_mut_ints
 		else:
 			mut_ints = self.mut_ints[:][:,sig_idx]
@@ -222,10 +227,14 @@ class OptimalSigSegmentation(OptimalSegmentation):
 		super(OptimalSigSegmentation, self).__init__(type_to_idx, num_segs, seg_mut_ints, None, seg_bp_bounds, None, None)
 
 	def get_mut_ints(self, ana_mode, sig_list):
+		""" sig_list can be None """
 		assert ana_mode != "sample_freqs"
-		sig_idx = np.zeros([len(sig_list)], dtype=INT_T)
-		for s in range(len(sig_list)):
-			tumour_idx[s] = self.type_to_idx[tumour_list[s]]
+		if sig_list:
+			sig_idx = np.zeros([len(sig_list)], dtype=INT_T)
+			for s in range(len(sig_list)):
+				sig_idx[s] = self.type_to_idx[sig_list[s]]
+		else:
+			sig_idx = np.arange(len(self.type_to_idx), dtype=INT_T)
 		mut_ints = self.mut_ints[:][:,sig_idx]
 		if ana_mode == "tumour_freqs":
 			mut_ints = self._convert_cos_to_freqs(mut_ints)
@@ -279,7 +288,7 @@ class Chromosome:
 		return num_segs
 
 	def get_num_segs(self, naive_seg_size, drop_zeros):
-		""" assumes that the naive segmentation has been computed already if drop_zeros is true """
+		""" Calling get_naive_seg with will compute the naive segmentation if it hasn't been already"""
 		# num_segs = self._get_num_segs(naive_seg_size)
 		naive_seg = self.get_naive_seg(naive_seg_size)
 		return naive_seg.get_num_segs(drop_zeros)
@@ -335,26 +344,12 @@ class Chromosome:
 			return 1
 		else:
 			raise ValueError("invalid mode")
-		
-
+	
 	# def update(self, pos, typ, ints):
 	# 	self.mut_array[self.pos_to_idx[pos]][self.type_to_idx[typ]] += ints
 
 	def update(self, dfs, valid_idx):
 		"""  """
-		# # assign dfs to train or valid
-		# num_valid_dfs = int(np.round(self.valid_frac*len(dfs)))
-		# num_train_dfs = len(dfs) - num_valid_dfs
-		# df_sizes = np.array([df.shape[0] for df in dfs])
-		# total = np.sum(df_sizes)		
-		# sorted_dfs = np.argsort(df_sizes)
-		# valid_idx, train_idx = [], []
-		# cur_valid_total, cur_train_total = 0, 0
-		# valid_total = int(np.round(self.valid_frac*total))
-		# train_total = total - valid_total_frac
-		# for d in range(sorted_dfs):
-		# 	if cur_valid_total <= valid_total_frac
-
 		tumour_types_list = sorted(self.tumour_types)
 		if valid_idx:
 			assert self.valid_frac > 0.
@@ -372,7 +367,6 @@ class Chromosome:
 			for i in range(cdf.shape[0]):
 				self.mut_array[split_idx][0][self.pos_to_idx[pos[i]]][self.type_to_idx[typ]] += ints[i]
 				self.mut_array[split_idx][1][self.pos_to_idx[pos[i]]][self.type_to_idx[typ]] += sample_freqs[i]
-		# self.tumour_totals = np.sum(self.mut_array[0], axis=0)[np.newaxis, ...]
 		assert np.sum(self.mut_array, axis=(0,3))[0].all()
 		assert np.sum(self.mut_array, axis=(0,3))[1].all()
 
@@ -408,7 +402,11 @@ class Chromosome:
 			tumour_idx[t] = self.type_to_idx[tumour_list[t]]
 		mut_array = mut_array[:,tumour_idx]
 		if mode == "tumour_freqs":
-			mut_array = mut_array / np.sum(mut_array, axis=0)[np.newaxis,...]
+			tumour_totals = np.sum(mut_array, axis=0)
+			# print(self.chrm_id, tv_split, np.min(tumour_totals))
+			if np.any(tumour_totals == 0.):
+				print(self.chrm_id, tv_split, tumour_totals)
+			mut_array = mut_array / (tumour_totals[np.newaxis,...] + EPS)
 		barray = bytes(mut_array)
 		if self.group_by:
 			assert( len(barray) == self.unique_pos_count_g*len(tumour_list)*itemsize )
