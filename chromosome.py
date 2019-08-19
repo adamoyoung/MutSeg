@@ -36,6 +36,7 @@ NUM_CHRMS = len(CHRM_LENS)
 INT_T = np.uint32
 FLOAT_T = np.float64 #np.float32
 EPS = np.finfo(FLOAT_T).eps # machine epsilon, for entropy calculations
+MAX_INT = 1000000000
 
 CFILE_BASE = "chrm"
 
@@ -257,8 +258,10 @@ class Chromosome:
 		self.mut_pos = None # numpy array
 		self.pos_to_idx = None # numpy array
 		self.group_by = None # int
+		self.max_group_dist = None
 		self.opt_segmentations = {} # dict of optimal segmentation objects, indexed by num_segs
 		self.naive_segmentations = {} # dict of naive segmentation objects, indexed by naive_seg_size
+		self.perm_segmentations = {}
 		# self.tumour_totals = None
 		self.valid_frac = None
 
@@ -287,10 +290,10 @@ class Chromosome:
 			num_segs += 1
 		return num_segs
 
-	def get_num_segs(self, naive_seg_size, drop_zeros):
+	def get_num_segs(self, naive_seg_size, drop_zeros, eval_split):
 		""" Calling get_naive_seg with will compute the naive segmentation if it hasn't been already"""
 		# num_segs = self._get_num_segs(naive_seg_size)
-		naive_seg = self.get_naive_seg(naive_seg_size)
+		naive_seg = self.get_naive_seg(naive_seg_size, eval_split)
 		return naive_seg.get_num_segs(drop_zeros)
 
 	def set_mut_arrays(self, typ_set, mut_pos_set, valid_frac):
@@ -370,26 +373,47 @@ class Chromosome:
 		assert np.sum(self.mut_array, axis=(0,3))[0].all()
 		assert np.sum(self.mut_array, axis=(0,3))[1].all()
 
-	def group(self, group_by):
+	def group(self, group_by, max_group_dist):
 		""" 
 		remainder mutations are discarded 
 		mut_pos_g is has inclusive boundaries
 		"""
 		self.group_by = group_by
-		self.unique_pos_count_g = self.unique_pos_count // group_by
+		self.max_group_dist = max_group_dist
+		# self.unique_pos_count_g = self.unique_pos_count // group_by
 		split_dim = 1
 		if self.valid_frac > 0.:
 			split_dim += 1
-		self.mut_pos_g = np.zeros( [self.unique_pos_count_g, 2], dtype=INT_T )
-		self.mut_array_g = np.zeros( [split_dim, 2, self.unique_pos_count_g, len(self.tumour_types)], dtype=FLOAT_T )
-		for i in range(self.unique_pos_count_g):
-			self.mut_array_g[0,:,i] = np.sum(self.mut_array[0,:,(i*group_by):((i+1)*group_by)], axis=1)
+		self.mut_pos_g = np.zeros( [self.unique_pos_count // 10, 2], dtype=INT_T )
+		self.mut_array_g = np.zeros( [split_dim, 2, self.unique_pos_count // 10, len(self.tumour_types)], dtype=FLOAT_T )
+		self.num_mut_pos_g = np.zeros( [self.unique_pos_count // 10], dtype=INT_T )
+		cur_idx = 0
+		cur_g_idx = 0
+		while cur_idx < self.unique_pos_count:
+			# find amount to group by
+			g_inc = 1
+			while g_inc < self.group_by and cur_idx+g_inc < self.unique_pos_count and self.mut_pos[cur_idx+g_inc] - self.mut_pos[cur_idx] < max_group_dist:
+				g_inc += 1
+			# do the grouping
+			self.mut_array_g[0,:,cur_g_idx] = np.sum(self.mut_array[0,:,cur_idx:cur_idx+g_inc], axis=1)
 			if self.valid_frac > 0.:
-				self.mut_array_g[1,:,i] = np.sum(self.mut_array[1,:,(i*group_by):((i+1)*group_by)], axis=1)
-			self.mut_pos_g[i][0] = self.mut_pos[i*group_by]
-			self.mut_pos_g[i][1] = self.mut_pos[(i+1)*group_by-1]
+				self.mut_array_g[1,:,cur_g_idx] = np.sum(self.mut_array[1,:,cur_idx:cur_idx+g_inc], axis=1)
+			self.mut_pos_g[cur_g_idx][0] = self.mut_pos[cur_idx]
+			self.mut_pos_g[cur_g_idx][1] = self.mut_pos[cur_idx+g_inc-1]
+			self.num_mut_pos_g[cur_g_idx] = g_inc
+			# update cur_idx
+			cur_idx += g_inc
+			cur_g_idx += 1
+		self.unique_pos_count_g = cur_g_idx
+		# throw away extra space in array
+		self.mut_pos_g = self.mut_pos_g[:cur_g_idx]
+		assert self.mut_pos_g.shape[0] == cur_g_idx
+		self.mut_array_g = self.mut_array_g[:,:,:cur_g_idx]
+		assert self.mut_array_g.shape[2] == cur_g_idx
+		self.num_mut_pos_g = self.num_mut_pos_g[:cur_g_idx]
 		assert np.sum(self.mut_array_g, axis=(0,3))[0].all()
 		assert np.sum(self.mut_array_g, axis=(0,3))[1].all()
+		print(self.chrm_id, self.unique_pos_count_g, np.mean(self.num_mut_pos_g))
 
 	def mut_array_to_bytes(self, mode, tumour_list, tv_split):
 		itemsize = np.dtype(FLOAT_T).itemsize
@@ -414,12 +438,24 @@ class Chromosome:
 			assert( len(barray) == self.unique_pos_count*len(tumour_list)*itemsize )
 		return barray
 
-	def add_opt_seg(self, num_segs, segmentation):
+	def add_opt_seg(self, num_segs, eval_split, segmentation):
 		# only allows one segmentation per num_segs
-		self.opt_segmentations[num_segs] = segmentation
+		self.opt_segmentations[(num_segs, eval_split)] = segmentation
 
-	def get_opt_seg(self, num_segs):
-		return self.opt_segmentations[num_segs]
+	def get_opt_seg(self, num_segs, eval_split):
+		return self.opt_segmentations[(num_segs, eval_split)]
+
+	def add_perm_seg(self, num_segs, drop_zeros, segmentation):
+		if not num_segs in self.perm_segmentations:
+			self.perm_segmentations[num_segs] = {drop_zeros: [segmentation]}
+		else:
+			if drop_zeros not in self.perm_segmentations[num_segs]:
+				self.perm_segmentations[num_segs][drop_zeros] = [segmentation]
+			else:
+				self.perm_segmentations[num_segs][drop_zeros].append(segmentation)
+
+	def get_perm_segs(self, num_segs, drop_zeros):
+		return self.perm_segmentations[num_segs][drop_zeros]
 
 	def get_default_naive_bp_bounds(self, naive_seg_size):
 		num_segs = self._get_num_segs(naive_seg_size)
@@ -430,27 +466,27 @@ class Chromosome:
 		bp_bounds[-1] = self.get_chrm_len()
 		return bp_bounds
 
-	def get_naive_seg(self, naive_seg_size, tv_split="all"):
+	def get_naive_seg(self, naive_seg_size, eval_split):
 		""" computes the naive segmentation (with and without zero segments), 
 		or fetches it if it's already been computed """
-		if naive_seg_size in self.naive_segmentations:
-			return self.naive_segmentations[naive_seg_size]
+		if (naive_seg_size, eval_split) in self.naive_segmentations:
+			return self.naive_segmentations[(naive_seg_size, eval_split)]
 		# get necessary constants and arrays
 		num_segs = self._get_num_segs(naive_seg_size)
 		T = self.get_num_tumour_types()
 		# get the right split
-		if tv_split == "all":
+		if eval_split == "all":
 			mut_array = np.sum(self.mut_array, axis=0) # not mut_array_g
-		elif tv_split == "train":
+		elif eval_split == "train":
 			mut_array = self.mut_array[0]
-		else: # tv_split == "valid"
+		else: # _split == "valid"
 			mut_array = self.mut_array[1]
 		mut_pos = self.mut_pos # not mut_pos_g
 		assert mut_array.shape[1] == mut_pos.shape[0]
 		max_mut_idx = mut_array.shape[1]
-		# remove the last few mutations that were not included in the grouping operation
-		if self.group_by:
-			max_mut_idx = (max_mut_idx // self.group_by) * self.group_by
+		# # remove the last few mutations that were not included in the grouping operation
+		# if self.group_by:
+		# 	max_mut_idx = (max_mut_idx // self.group_by) * self.group_by
 		# set up new arrays
 		seg_mut_ints = np.zeros([2,num_segs, T], dtype=FLOAT_T)
 		seg_mut_bounds = np.zeros([num_segs+1], dtype=INT_T)
@@ -478,7 +514,7 @@ class Chromosome:
 		assert num_nz_segs <= num_segs
 		assert num_nz_segs > 0
 		naive_seg = NaiveSegmentation(self.type_to_idx, num_segs, seg_mut_ints, seg_mut_bounds, seg_bp_bounds, nz_seg_idx, num_nz_segs)
-		self.naive_segmentations[naive_seg_size] = naive_seg
+		self.naive_segmentations[(naive_seg_size, eval_split)] = naive_seg
 		return naive_seg
 
 	def delete_non_ana_data(self):

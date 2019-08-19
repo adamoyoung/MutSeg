@@ -11,8 +11,9 @@ int main(int argc, char *argv[]) {
 	// argv[8] == S_s file name (str)
 	// argv[9] == E_s file name (str)
 	// argv[10] == prev_K (int)
+	// argv[11] == min_size(int)
 
-	if (argc != 11) {
+	if (argc != 12) {
 		fprintf(stderr, "Error: argc = %d, should be 11\n", argc);
 		return -1;
 	}
@@ -28,9 +29,10 @@ int main(int argc, char *argv[]) {
 	char *S_s_file_name = argv[8];
 	char *E_s_file_name = argv[9];
 	int prev_K = atoi(argv[10]);
+	int min_size = atoi(argv[11]);
 
 	// these are not passed as arguments... for now
-	int min_size = 1;
+	// int min_size = 1;
 	int seeds[10];
 	int num_seeds = 0;
 

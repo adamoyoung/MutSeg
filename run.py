@@ -37,6 +37,7 @@ parser.add_argument("--script_dir_path", type=str, default="/home/q/qmorris/youn
 parser.add_argument("--overwrite", type=lambda x:bool(strtobool(x)), default=False)
 parser.add_argument("--tumour_set", type=str, choices=["all", "reduced"], default="all", help="set of tumour types to use")
 parser.add_argument("--tv_split", type=str, choices=["all", "train"], default="all")
+parser.add_argument("--min_size", type=int, default=1)
 
 
 if __name__ == "__main__":
@@ -74,9 +75,13 @@ if __name__ == "__main__":
 	mp = FLAGS.num_cores
 	seg_size = FLAGS.naive_seg_size
 	prev_k = 0
+	min_size = FLAGS.min_size
 	if not FLAGS.overwrite:
 		assert not os.path.exists(FLAGS.output_dir_path)
 	output_dir_path = FLAGS.output_dir_path
+	if FLAGS.tumour_set != "all":
+		output_dir_path += "_" + FLAGS.tumour_set[:3]
+	output_dir_path += "_" + str(FLAGS.min_size)
 	if FLAGS.mode == "counts":
 		output_dir_path += "_co"
 	elif FLAGS.mode == "sample_freqs":
@@ -96,6 +101,9 @@ if __name__ == "__main__":
 	assert FLAGS.num_cores <= 80
 	num_cores = FLAGS.num_cores
 	script_dir_path = FLAGS.script_dir_path
+	if FLAGS.tumour_set != "all":
+		script_dir_path += "_" + FLAGS.tumour_set[:3]
+	script_dir_path += "_" + str(FLAGS.min_size)
 	if FLAGS.mode == "counts":
 		script_dir_path += "_co"
 	elif FLAGS.mode == "sample_freqs":
@@ -108,7 +116,6 @@ if __name__ == "__main__":
 		tumour_list = sorted(chrmlib.ALL_SET)
 	else: # FLAGS.tumour_set == "reduced"
 		tumour_list = sorted(chrmlib.REDUCED_SET)
-
 	for i in range(len(cfile_paths)):
 		# create the script
 		cfile_path = cfile_paths[i]
@@ -121,7 +128,7 @@ if __name__ == "__main__":
 		e_f_fp = os.path.join(results_dir_path,"E_f_chrm_{}.dat".format(chrm_id))
 		s_s_fp = os.path.join(results_dir_path,"S_s_chrm_{}.dat".format(chrm_id))
 		e_s_fp = os.path.join(results_dir_path,"E_s_chrm_{}.dat".format(chrm_id))
-		cmd = f"{exe_path} {quick_test} {muts_file_name} {m} {t} {k} {mp} {e_f_fp} {s_s_fp} {e_s_fp} {prev_k}"
+		cmd = f"{exe_path} {quick_test} {muts_file_name} {m} {t} {k} {mp} {e_f_fp} {s_s_fp} {e_s_fp} {prev_k} {min_size}"
 		script_file_path = os.path.join(script_dir_path,"chrm_{}.sh".format(chrm_id))
 		with open(script_file_path, "w") as script_file:
 			print("#!/bin/bash\n\n" + cmd + "\n", end="", file=script_file)
