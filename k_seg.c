@@ -21,7 +21,7 @@ int compute_counts(double *muts, int M, int T, double **C_ptr) {
 
 }
 
-double score(int start, int end, double *C, double M_total, int T, int *seeds, int num_seeds) {
+double score(int start, int end, double *C, double M_total, int T, int *seeds, int num_seeds, double h_pen) {
 
 	double tumour_C[T];
 	double total_C = 0.;
@@ -45,7 +45,7 @@ double score(int start, int end, double *C, double M_total, int T, int *seeds, i
 		term_one += (tumour_C[j] / M_total) * log( (tumour_C[j] / M_total) + EPS );
 	}
 
-	return term_one + term_two;
+	return term_one + h_pen*term_two;
 
 }
 
@@ -106,7 +106,7 @@ void print_uint32_array(uint32_t *array, int dim_1, int dim_2) {
 	}
 }
 
-void update_table(double *E_cur, uint32_t *S_cur, double *E_prev, int mp, int M, int k, int min_size, double *C, double M_total, int T, int *seeds, int num_seeds) {
+void update_table(double *E_cur, uint32_t *S_cur, double *E_prev, int mp, int M, int k, int min_size, double *C, double M_total, int T, int *seeds, int num_seeds, double h_pen) {
 	
 	if (mp) {
 
@@ -120,7 +120,7 @@ void update_table(double *E_cur, uint32_t *S_cur, double *E_prev, int mp, int M,
 					if (i-(j-1) < min_size) {
 						break;
 					}
-					temp_score = E_prev[ j-1 ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
+					temp_score = E_prev[ j-1 ] + score(j,i+1,C,M_total,T,seeds,num_seeds,h_pen);
 					if (temp_score > max_score) {
 						max_score = temp_score;
 						max_seg = j-1;
@@ -142,7 +142,7 @@ void update_table(double *E_cur, uint32_t *S_cur, double *E_prev, int mp, int M,
 					if (i-(j-1) < min_size) {
 						break;
 					}
-					temp_score = E_prev[ j-1 ] + score(j,i+1,C,M_total,T,seeds,num_seeds);
+					temp_score = E_prev[ j-1 ] + score(j,i+1,C,M_total,T,seeds,num_seeds,h_pen);
 					if (temp_score > max_score) {
 						max_score = temp_score;
 						max_seg = j-1;
@@ -157,7 +157,7 @@ void update_table(double *E_cur, uint32_t *S_cur, double *E_prev, int mp, int M,
 
 }
 
-int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_seeds, const char *E_f_file_name, const char *S_s_file_name, const char *E_s_file_name, double *final_score, int mp, int prev_K) {
+int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_seeds, const char *E_f_file_name, const char *S_s_file_name, const char *E_s_file_name, double *final_score, int mp, int prev_K, double h_pen) {
 
 	assert(M < MAX_UINT32);
 	assert(prev_K >= 0);
@@ -242,29 +242,6 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 			return -1;
 		}
 		printf("E_f[%d] = %f\n", prev_K, E_l[M-1]);
-		// // move the E_s pointer back to the end of the file
-		// seek = fseek(E_s_fp, 0, SEEK_END);
-		// if (seek) {
-		// 	perror("E_s seek");
-		// 	return -1;
-		// }
-		// S_s file
-		// seek = fseek(S_s_fp, -M*sizeof(uint32_t), SEEK_END);
-		// if (seek) {
-		// 	perror("S_s seek");
-		// 	return -1;
-		// }
-		// read = fread(S_w, sizeof(uint32_t), M, S_s_fp);
-		// if (read != M) {
-		// 	perror("S_s seek");
-		// 	return -1;
-		// }
-		// // move the S_s pointer back so that the last row gets overwritten in eviction
-		// seek = fseek(S_s_fp, -M*sizeof(uint32_t), SEEK_END);
-		// if (seek) {
-		// 	perror("S_s seek");
-		// 	return -1;
-		// }
 		end = omp_get_wtime();
 		time_spent = (end-begin);
 		printf("time spent = %fs\n\n", time_spent);
@@ -282,7 +259,7 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 			if (i+1 < min_size) {
 				E_w[ 0*M+i ] = -INFINITY;
 			} else {
-				E_w[ 0*M+i ] = score(0,i+1,C,M_total,T,seeds,num_seeds);
+				E_w[ 0*M+i ] = score(0,i+1,C,M_total,T,seeds,num_seeds,h_pen);
 				S_w[ 0*M+i ] = 0;
 			}
 		}
@@ -292,7 +269,7 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 		// initial run uses E_l array
 		printf(">>> k = %d\n", prev_K+1);
 		begin = omp_get_wtime();
-		update_table(&E_w[0],&S_w[0],&E_l[0],mp,M,prev_K,min_size,C,M_total,T,seeds,num_seeds);
+		update_table(&E_w[0],&S_w[0],&E_l[0],mp,M,prev_K,min_size,C,M_total,T,seeds,num_seeds,h_pen);
 		E_f[0] = E_w[ 0*M+(M-1) ];
 		printf("E_f[%d] = %f\n", prev_K+1, E_w[M-1]);
 	}
@@ -310,7 +287,7 @@ int k_seg(double *muts, int M, int T, int K, int min_size, int *seeds, int num_s
 		I_w_prev = I_w;
 		I_w = (I_w+1) % W;
 
-		update_table(&E_w[I_w*M],&S_w[I_w*M],&E_w[I_w_prev*M],mp,M,prev_K+k,min_size,C,M_total,T,seeds,num_seeds);
+		update_table(&E_w[I_w*M],&S_w[I_w*M],&E_w[I_w_prev*M],mp,M,prev_K+k,min_size,C,M_total,T,seeds,num_seeds,h_pen);
 		
 		// update the final array
 		E_f[k] = E_w[ I_w*M+(M-1) ];
@@ -418,62 +395,3 @@ void print_path(uint32_t *final_seg, int K) {
 	printf("%d]\n", final_seg[K-1]);
 
 }
-
-// int main(int argc, char *argv[]) {
-
-// 	int M = 1000;
-// 	int T = 40;
-// 	int K = 10;
-// 	int min_size = 1;
-// 	int num_seeds = 0;
-// 	int seeds[M];
-// 	char * S_s_file_name = "S_s_file.dat";
-// 	char * E_f_file_name = "E_f_file.dat";
-// 	int mp = 1;
-
-// 	double *muts = calloc( M*T, sizeof(double) ); // (M,T)
-// 	if (!muts) {
-// 		perror("Error");
-// 		return -1;
-// 	}
-
-// 	int random_seed = 303;
-// 	srand(random_seed);
-// 	int num_muts, offset, mut_ptr;
-
-// 	for (int i = 0; i < M; i++) {
-// 		num_muts = 1 + (rand() % T);
-// 		//printf("muts[%d] = %d\n", i, num_muts);
-// 		offset = rand() % T;
-// 		for (int j = 0; j < num_muts; j++) {
-// 			mut_ptr = (offset + j) % T;
-// 			assert(mut_ptr < T);
-// 			muts[ i*T+mut_ptr ] = 1.;
-// 		}
-// 	}
-
-// 	//print_double_array(muts, M, T);
-// 	double final_score;
-// 	int ret_val = k_seg(muts, M, T, K, min_size, seeds, num_seeds, E_f_file_name, S_s_file_name, &final_score, mp);
-// 	if (ret_val < 0) {
-// 		fprintf(stderr, "Error: program terminated early\n");
-// 	} else {
-// 		printf("final_score = %f\n", final_score);
-// 	}
-	
-// 	uint32_t *final_seg = malloc(K*sizeof(uint32_t));
-// 	if (!final_seg) {
-// 		perror("final_seg malloc");
-// 		return -1;
-// 	}
-// 	// ret_val = traceback(S_s_file_name, M, K, final_seg);
-// 	// if (ret_val < 0) {
-// 	// 	fprintf(stderr, "Error: program terminated early\n");
-// 	// 	return -1;
-// 	// } else {
-// 	// 	print_path(final_seg, K);
-// 	// }
-
-// 	return 0;
-
-// }

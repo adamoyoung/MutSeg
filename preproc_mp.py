@@ -15,28 +15,6 @@ import pandas as pd
 import multiprocessing as mp
 from distutils.util import strtobool
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--src_dir_path", type=str, default="dsets/for_adamo")
-parser.add_argument("--kat_file_path", type=str, default="dsets/kataegis/snvs.tsv")
-parser.add_argument("--donor_file_path", type=str, default="dsets/for_adamo_donors.tsv")
-parser.add_argument("--alt_file_path", type=str, default="dsets/alt_muts/snvs.csv")
-parser.add_argument("--sig_dir_path", type=str, default="dsets/chrm_sigs")
-parser.add_argument("--mc_dir_path", type=str, default="mc_data_kat")
-parser.add_argument("--mc_alt_dir_path", type=str, default="mc_data_kat_alt")
-parser.add_argument("--proc_file_path", type=str, default="proc_kat.pkl")
-parser.add_argument("--df_sig_file_path", type=str, default="df_sig.pkl")
-parser.add_argument("--df_alt_file_path", type=str, default="df_alt.pkl")
-parser.add_argument("--group_by", type=int, default=100)
-parser.add_argument("--cfile_dir_path", type=str, default="cfiles_kat", help="directory for .dat files for C program")
-parser.add_argument("--random_seed", type=int, default=373)
-parser.add_argument("--num_procs", type=int, default=mp.cpu_count())
-parser.add_argument("--overwrite", type=lambda x:bool(strtobool(x)), default=False)
-parser.add_argument("--tumour_set", type=str, choices=["all", "reduced", "small"], default="all", help="set of tumour types to use, only relevant for cfiles")
-parser.add_argument("--create_cfiles", type=lambda x:bool(strtobool(x)), default=True)
-parser.add_argument("--valid_frac", type=float, default=0.3)
-parser.add_argument("--ct_file_path", type=str, default="dsets/cell_type.csv")
-parser.add_argument("--max_group_dist", type=int, default=chrmlib.MAX_INT)
-
 
 def get_pseudo_median_fn(col_name):
 	""" getter function for accumulating grouped tables by col"""
@@ -473,36 +451,6 @@ def preproc_alt(alt_file_path, df_alt_file_path):
 	return chrms
 
 
-def proc_sig_files_func(proc_input):
-
-	proc_start = time.time()
-	proc_id, proc_file_paths = proc_input[0], proc_input[1]
-	proc_file_count = 0
-	proc_sig_entries = []
-	# col_names = ["chrm", "start", "end", "sig_typ", "rand1", "rand2", "rand3", "rand4", "rand5"]
-	col_names = ["chrm", "start", "end", "sig_typ"]
-	file_name = os
-	for file_path in proc_file_paths:
-		df = pd.read_csv(file_path, sep="\t", header=None, names=col_names)
-		df["new_chrm"] = df["chrm"].map(get_convert_chrm_fn())
-		df.dropna(subset=["new_chrm"], axis=0, inplace=True)
-		df.drop(columns=["chrm"], inplace=True)
-		df.rename(index=str, columns={"new_chrm": "chrm"}, inplace=True)
-		df = df.astype({"chrm": int, "start": int, "end": int, "sig_typ": str})
-		assert (df["chrm"] >= 1).all()
-		assert (df["chrm"] <= chrmlib.NUM_CHRMS).all()
-		# make chrms and end positions 0-based -- start is already
-		df["chrm"] = df["chrm"] - 1
-		# df["start"] = df["start"] - 1
-		df["end"] = df["end"] - 1
-		ct_id =  os.path.splitext(os.path.basename(os.path.normpath(file_path)))[0][0:4]
-		df["ct_id"] = np.array(df.shape[0]*[ct_id])
-		proc_sig_entries.append(df)
-		proc_file_count += 1
-	proc_end = time.time()
-	return proc_file_count, proc_sig_entries
-
-
 def read_cell_type(ct_file_path):
 
 	assert os.path.isfile(ct_file_path)
@@ -520,67 +468,27 @@ def read_cell_type(ct_file_path):
 	return df
 
 
-def preproc_sig(sig_dir_path, ct_file_path, num_procs):
-
-	assert os.path.isdir(sig_dir_path)
-	beg_time = time.time()
-	print("[0] starting preproc_sig")
-	# read in the cell types
-	ct_df = read_cell_type(ct_file_path)
-	ct_set = set(ct_df["ct_id"])
-	print(sorted(ct_set))
-	# read in the entries
-	file_paths = []
-	file_ct_ids = []
-	file_count = 0
-	entries = sorted(os.listdir(sig_dir_path))
-	for entry in entries:
-		entry_path = os.path.join(sig_dir_path,entry)
-		if os.path.isfile(entry_path) and entry[0:4] in ct_set:
-			file_paths.append(entry_path)
-			file_ct_ids.append(entry[0:4])
-			file_count += 1
-	assert file_count <= len(entries)
-	print(sorted(file_ct_ids))
-	cur_time = time.time()
-	num_per_proc = [len(file_paths) // num_procs for i in range(num_procs)]
-	for i in range(len(file_paths) % num_procs):
-		num_per_proc[i] += 1
-	assert np.sum(num_per_proc) == len(file_paths)
-	print("max num_per_proc = %d" % np.max(num_per_proc))
-	running_total = 0
-	proc_inputs = []
-	for i in range(num_procs):
-		proc_inputs.append((i,file_paths[running_total:running_total+num_per_proc[i]]))
-		running_total += num_per_proc[i]
-	assert running_total == len(file_paths)
-	cur_time = time.time()
-	print( "[{0:.0f}] read in all of the files".format(cur_time-beg_time) )
-	if num_procs > 1:
-		pool = mp.Pool(num_procs)
-		proc_results = pool.map(proc_sig_files_func, proc_inputs)
-		assert len(proc_results) == num_procs
-	else:
-		proc_results = [proc_sig_files_func(proc_inputs[0])]
-	# aggregate results
-	file_count = 0
-	sig_entries = []
-	for proc_result in proc_results:
-		file_count += proc_result[0]
-		sig_entries.extend(proc_result[1])
-	cur_time = time.time()
-	print( "[{0:.0f}] aggregated all the results".format(cur_time-beg_time) )
-	sig_df = pd.concat(sig_entries, axis=0)
-	cur_time = time.time()
-	print( "[{0:.0f}] concatenated dataframes".format(cur_time-beg_time) )
-	sig_df.sort_values(["chrm","start","end"], inplace=True)
-	cur_time = time.time()
-	print( "[{0:.0f}] sorting big dataframe".format(cur_time-beg_time) )
-	return sig_df
-
-
 if __name__ == "__main__":
 
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--src_dir_path", type=str, default="dsets/for_adamo")
+	parser.add_argument("--kat_file_path", type=str, default="dsets/kataegis/snvs.tsv")
+	parser.add_argument("--donor_file_path", type=str, default="dsets/for_adamo_donors.tsv")
+	parser.add_argument("--alt_file_path", type=str, default="dsets/alt_muts/snvs.csv")
+	parser.add_argument("--mc_dir_path", type=str, default="mc_data_kat")
+	parser.add_argument("--mc_alt_dir_path", type=str, default="mc_data_kat_alt")
+	parser.add_argument("--proc_file_path", type=str, default="proc_kat.pkl")
+	parser.add_argument("--df_alt_file_path", type=str, default="df_alt.pkl")
+	parser.add_argument("--group_by", type=int, default=100)
+	parser.add_argument("--cfile_dir_path", type=str, default="cfiles_kat", help="directory for .dat files for C program")
+	parser.add_argument("--random_seed", type=int, default=373)
+	parser.add_argument("--num_procs", type=int, default=mp.cpu_count())
+	parser.add_argument("--overwrite", type=lambda x:bool(strtobool(x)), default=False)
+	parser.add_argument("--tumour_set", type=str, choices=["all", "reduced", "small"], default="all", help="set of tumour types to use, only relevant for cfiles")
+	parser.add_argument("--create_cfiles", type=lambda x:bool(strtobool(x)), default=True)
+	parser.add_argument("--valid_frac", type=float, default=0.3)
+	parser.add_argument("--ct_file_path", type=str, default="dsets/cell_type.csv")
+	parser.add_argument("--max_group_dist", type=int, default=chrmlib.MAX_INT)
 	FLAGS = parser.parse_args()
 	if FLAGS.random_seed:
 		np.random.seed(FLAGS.random_seed)
@@ -608,14 +516,6 @@ if __name__ == "__main__":
 		print(">>> creating new alt data (with possible overwrite)")
 		alt_chrms = preproc_alt(FLAGS.alt_file_path, FLAGS.df_alt_file_path)
 		chrmlib.save_mc_data(FLAGS.mc_alt_dir_path, alt_chrms)
-	# do chromatin signature data
-	if not FLAGS.overwrite and os.path.isfile(FLAGS.df_sig_file_path):
-		print(">>> sig data exists, no need to load")
-		pass
-	else:
-		print(">>> creating new sig data (with possible overwrite)")
-		sig_df = preproc_sig(FLAGS.sig_dir_path, FLAGS.ct_file_path, FLAGS.num_procs)
-		sig_df.to_pickle(FLAGS.df_sig_file_path, protocol=pickle.HIGHEST_PROTOCOL)
 	# do the cfiles directory
 	if FLAGS.create_cfiles:
 		# if FLAGS.group_by > 1:

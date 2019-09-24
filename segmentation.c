@@ -12,9 +12,11 @@ int main(int argc, char *argv[]) {
 	// argv[9] == E_s file name (str)
 	// argv[10] == prev_K (int)
 	// argv[11] == min_size(int)
+	// argv[12] == h_pen (double)
 
-	if (argc != 12) {
-		fprintf(stderr, "Error: argc = %d, should be 11\n", argc);
+	int expected_argc = 13;
+	if (argc != expected_argc) {
+		fprintf(stderr, "Error: argc = %d, should be %d\n", argc, expected_argc);
 		return -1;
 	}
 
@@ -30,6 +32,7 @@ int main(int argc, char *argv[]) {
 	char *E_s_file_name = argv[9];
 	int prev_K = atoi(argv[10]);
 	int min_size = atoi(argv[11]);
+	double h_pen = atof(argv[12]);
 
 	// these are not passed as arguments... for now
 	// int min_size = 1;
@@ -77,7 +80,7 @@ int main(int argc, char *argv[]) {
 
 	double final_score;
 	int ret_val;
-	ret_val = k_seg(muts, M, T, K, min_size, seeds, num_seeds, E_f_file_name, S_s_file_name, E_s_file_name, &final_score, mp, prev_K);
+	ret_val = k_seg(muts, M, T, K, min_size, seeds, num_seeds, E_f_file_name, S_s_file_name, E_s_file_name, &final_score, mp, prev_K, h_pen);
 	if (ret_val < 0) {
 		fprintf(stderr, "Error: program terminated early\n");
 		return -1;

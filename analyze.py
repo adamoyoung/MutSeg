@@ -23,25 +23,6 @@ from matplotlib import rc
 # rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
 # rc('text', usetex=True)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--run_dir_path", type=str, default="runs_kat/aug_01_sf", help="path to directory that holds: ana file (after seg), results dir, plots dir")
-parser.add_argument("--results_dir_name", type=str, default="results", help="name of directory with S_s, E_f, and E_s files") #"/scratch/q/qmorris/youngad2/results")
-parser.add_argument("--mc_dir_path", type=str, default="mc_data_kat", help="path to chromosome data .pkl file, read-only") #"/home/q/qmorris/youngad2/MutSeg/mc_data_mp.pkl")
-parser.add_argument("--ana_file_name", type=str, default="ana_data.pkl", help="path to analyzsis data .pkl file")
-parser.add_argument("--naive_seg_size", type=int, default=1000000, help="size of segments in naive segmentation (in bp)")
-parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "ann", "plt", "seg", "cmi"], default="seg")
-parser.add_argument("--data_type", type=str, choices=["normal", "alt", "sig"], default="normal")
-parser.add_argument("--csv_dir_path", type=str, default="for_adamo", help="only useful in \'ann\' mode, path to directory where csvs that need to be annotated will be")
-parser.add_argument("--num_procs", type=int, default=mp.cpu_count(), help="only useful in \'ann\' mode, number of process to fork")
-parser.add_argument("--drop_zeros", type=lambda x:bool(strtobool(x)), default=True)
-parser.add_argument("--plot_dir_name", type=str, default="plots", help="only useful in \'plt\' mode")
-parser.add_argument("--ana_mode", type=str, choices=["sample_freqs", "counts", "tumour_freqs"], default="sample_freqs")
-parser.add_argument("--tumour_set", type=str, choices=["all", "reduced"], default="all", help="set of tumour types to use")
-parser.add_argument("--df_sig_file_path", type=str, default="df_sig.pkl")
-parser.add_argument("--train_split", type=str, choices=["all", "train"], default="all")
-parser.add_argument("--eval_split", type=str, choices=["all", "train", "valid"], default="all")
-parser.add_argument("--num_perms", type=int, default=0)
-
 
 def median(a, b):
 	return int(round((a+b)/2))
@@ -61,7 +42,6 @@ def load_seg_results(S_s_file_path, E_f_file_path, mut_array, mut_pos, num_segs,
 	S_s_file_path: str, path to S_s file
 	E_f_file_path: str, path to E_f file
 	"""
-	
 	M = mut_pos.shape[0]
 	T = len(type_to_idx)
 	# read in contents of S_s file
@@ -382,87 +362,6 @@ def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 	return None
 
 
-def annotate_files_func(proc_inputs):
-	""" function called by each process """
-	proc_id, proc_files_path, sh_arrays = proc_inputs[0], proc_inputs[1], proc_inputs[2]
-	num_segs, seg_bp_bounds = sh_arrays[0], sh_arrays[1]
-	# local function to find the row
-	def find_opt_seg(row):
-		chrm_num, mut_pos = row["Chromosome"]-1, row["Start_position"]-1
-		chrm_seg_bp_bounds = seg_bp_bounds[chrm_num]
-		chrm_num_segs = num_segs[chrm_num]
-		prev_num_segs = sum([num_segs[i] for i in range(chrm_num)])
-		opt_seg = -1
-		for s in range(1,chrm_num_segs+1):
-			if mut_pos < chrm_seg_bp_bounds[s]:
-				opt_seg = prev_num_segs + s + 1
-				break
-		return opt_seg
-	# read in each file, apply function, overwrite file
-	for file_path in proc_files_path:
-		df = pd.read_csv(file_path)
-		opt_segs = df.apply(find_opt_seg, axis=1)
-		assert (opt_segs >= 0).all()
-		df["optimal_segment"] = opt_segs
-		# df.apply(assert_naive_seg, axis=1)
-		df.to_csv(file_path)
-	return None
-
-
-def annotate_segs(ana_file_path, naive_seg_size, csv_dir_path, num_procs, drop_zeros):
-	"""
-	annotate mutations in original csv files with optimal segment location
-	assumes these csv files are valid
-	note that both naive and optimal segmentations have 1-based indexing in the files
-	"""
-	raise NotImplementedError
-	# # load chrm data
-	# with open(ana_file_path, "rb") as pkl_file:
-	# 	chrms = pickle.load(pkl_file)
-	# assert len(chrms) == chrmlib.NUM_CHRMS
-	# print("loaded chrms")
-	# # iterate over files in directory
-	# file_paths = []
-	# file_count = 0
-	# entries = sorted(os.listdir(csv_dir_path))
-	# for entry in entries:
-	# 	entry_path = os.path.join(csv_dir_path,entry)
-	# 	if os.path.isfile(entry_path):
-	# 		file_paths.append(entry_path)
-	# 		file_count += 1
-	# assert file_count == len(entries)
-	# # divide up file names equally amongst processes
-	# num_per_proc = [len(file_paths) // num_procs for i in range(num_procs)]
-	# for i in range(len(file_paths) % num_procs):
-	# 	num_per_proc[i] += 1
-	# assert np.sum(num_per_proc) == len(file_paths)
-	# print("max num_per_proc = %d" % np.max(num_per_proc))
-	# # set up inputs
-	# num_chrms = len(chrms)
-	# num_segs = [chrm.get_num_segs(naive_seg_size) for chrm in chrms]
-	# max_num_segs = max(num_segs)
-	# # shared read-only arrays
-	# sh_num_segs = np.ctypeslib.as_array(mp.Array(ctypes.c_uint, num_chrms))
-	# sh_seg_bp_bounds = np.ctypeslib.as_array(mp.Array(ctypes.c_uint, num_chrms*(max_num_segs+1))).reshape(num_chrms,max_num_segs+1)
-	# # num_segs = np.array([chrm.get_num_segs(naive_seg_size) for chrm in chrms], dtype=chrmlib.INT_T)
-	# # all_seg_bp_bounds = np.zeros([len(chrms),max(num_segs)+1], dtype=chrmlib.INT_T)
-	# for c in range(len(chrms)):
-	# 	sh_num_segs[c] = num_segs[c]
-	# 	sh_seg_bp_bounds[c][0:num_segs[c]+1] = chrms[c].get_opt_seg(naive_seg_size).seg_bp_bounds
-	# sh_arrays = [sh_num_segs, sh_seg_bp_bounds]
-	# running_total = 0
-	# proc_inputs = []
-	# for i in range(num_procs):
-	# 	proc_inputs.append((i,file_paths[running_total:running_total+num_per_proc[i]],sh_arrays))
-	# 	running_total += num_per_proc[i]
-	# assert running_total == len(file_paths)
-	# # annotate files and save results
-	# pool = mp.Pool(num_procs)
-	# proc_results = pool.map(annotate_files_func, proc_inputs)
-	# # proc_results is a list of None's
-	# assert len(proc_results) == num_procs
-
-
 def plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split):
 	""" plots the sizes of the segments in the optimal segmentation (in bp) """
 
@@ -661,19 +560,6 @@ def get_opt_seg_from_bp_bounds(mut_ints, mut_pos, num_segs, bp_bounds, type_to_i
 	return seg
 
 
-def permute_bp_bounds(orig_bp_bounds, num_perms):
-
-	perm_bp_bounds = []
-	orig_bp_sizes = orig_bp_bounds[1:] - orig_bp_bounds[:-1]
-	for p in range(num_perms):
-		cur_bp_sizes = np.random.permutation(orig_bp_sizes)
-		cur_bp_bounds = np.zeros([len(cur_bp_sizes)+1], dtype=chrmlib.INT_T)
-		for i in range(len(cur_bp_sizes)):
-			cur_bp_bounds[i+1] = np.sum(cur_bp_sizes[:i+1])
-		perm_bp_bounds.append(cur_bp_bounds)
-	return perm_bp_bounds
-
-
 def save_alt_seg_results(results_dir_path, mc_dir_path, mc_alt_dir_path, ana_alt_file_path, naive_seg_size, num_perms):
 
 	raise NotImplementedError
@@ -713,107 +599,26 @@ def save_alt_seg_results(results_dir_path, mc_dir_path, mc_alt_dir_path, ana_alt
 	# 	pickle.dump(alt_chrms, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def get_mut_ints_from_sig_df_and_bp_bounds(sig_df, bp_bounds, sig_type_to_idx):
-	""" assumes sig_df is sorted already by chrm, start, end"""
-
-	num_segs = bp_bounds.shape[0]-1
-	num_sig_types = len(sig_type_to_idx.keys())
-	straddle_mut_count = 0
-	mut_ints = np.zeros([num_segs, num_sig_types], dtype=chrmlib.FLOAT_T)
-	starts = sig_df["start"].to_numpy()
-	ends = sig_df["end"].to_numpy()
-	sig_types = sig_df["sig_typ"].to_numpy()
-	cur_seg_idx = 0
-	for i in range(len(starts)):
-		while starts[i] >= bp_bounds[cur_seg_idx+1]:
-			cur_seg_idx += 1
-			assert cur_seg_idx < num_segs
-		if ends[i] < bp_bounds[cur_seg_idx+1]:
-			mut_ints[cur_seg_idx,sig_type_to_idx[sig_types[i]]] += ends[i] - starts[i]
-		else: # ends[i] >= chrm_bp_bounds[cur_seg_idx+1]
-			assert cur_seg_idx < num_segs-1, (starts[i], ends[i], bp_bounds[cur_seg_idx+1])
-			straddle_mut_count += 1
-			mut_ints[cur_seg_idx,sig_type_to_idx[sig_types[i]]] += bp_bounds[cur_seg_idx+1] - starts[i]
-			mut_ints[cur_seg_idx+1,sig_type_to_idx[sig_types[i]]] += ends[i] - bp_bounds[cur_seg_idx+1]
-	# print("number of straddle mutations = {}".format(straddle_mut_count))
-	return mut_ints
-
-
-def save_sig_seg_results(results_dir_path, mc_dir_path, df_sig_file_path, ana_sig_dir_path, naive_seg_size):
-	""" gets results for drop_zeros and not drop_zeros """
-
-	raise NotImplementedError
-	# print(mc_dir_path)
-	# print(df_sig_file_path)
-	# print(ana_sig_dir_path)
-	# assert os.path.isdir(mc_dir_path)
-	# assert os.path.isfile(df_sig_file_path)
-	# os.makedirs(ana_sig_dir_path, exist_ok=True)
-	# chrms = chrmlib.load_mc_data(mc_dir_path)
-	# all_sig_df = pd.read_pickle(df_sig_file_path)
-	# print("total number of sigs = {}".format(all_sig_df.shape[0]))
-	# ct_ids = sorted(set(all_sig_df["ct_id"]))
-	# assert "all" not in ct_ids
-	# ct_ids.append("all")
-	# for ct_id in ct_ids:
-	# 	if ct_id == "all":
-	# 		sig_df = all_sig_df
-	# 	else:
-	# 		sig_df = all_sig_df[all_sig_df["ct_id"] == ct_id]
-	# 	sig_dfs = [sig_df[sig_df["chrm"] == c].sort_values(["start","end"]) for c in range(chrmlib.NUM_CHRMS)]
-	# 	sig_chrms = [chrmlib.Chromosome(c) for c in range(chrmlib.NUM_CHRMS)]
-	# 	# get type_to_idx and set it in the chrms
-	# 	sig_types = sorted(set(sig_df["sig_typ"]))
-	# 	sig_type_to_idx = {}
-	# 	for idx in range(len(sig_types)):
-	# 		sig_type_to_idx[sig_types[idx]] = idx
-	# 	for c in range(chrmlib.NUM_CHRMS):
-	# 		sig_chrms[c].type_to_idx = sig_type_to_idx
-	# 		sig_chrms[c].tumour_types = set(sig_type_to_idx.keys())
-	# 	# get naive sig segs
-	# 	for c in range(chrmlib.NUM_CHRMS):
-	# 		chrm = chrms[c]
-	# 		sig_chrm = sig_chrms[c]
-	# 		naive_bp_bounds = chrm.get_default_naive_bp_bounds(naive_seg_size)
-	# 		sig_naive_mut_ints = get_mut_ints_from_sig_df_and_bp_bounds(sig_dfs[c], naive_bp_bounds, sig_type_to_idx)
-	# 		num_segs = chrm._get_num_segs(naive_seg_size)
-	# 		nz_seg_idx = np.nonzero(np.sum(sig_naive_mut_ints,axis=1))[0]
-	# 		sig_naive_seg = NaiveSigSegmentation(sig_type_to_idx, num_segs, sig_naive_mut_ints, naive_bp_bounds, nz_seg_idx, len(nz_seg_idx))
-	# 		sig_chrm.naive_segmentations[naive_seg_size] = sig_naive_seg
-	# 		print("finished chrm {}".format(c))
-	# 		print("num segs = {}, num nz segs = {}".format(num_segs,len(nz_seg_idx)))
-	# 	print("done sig naive segs")
-	# 	# get optimal sig segs
-	# 	for c in range(chrmlib.NUM_CHRMS):
-	# 		S_s_file_name = "S_s_chrm_{}.dat".format(c)
-	# 		S_s_file_path = os.path.join(results_dir_path, S_s_file_name)
-	# 		E_f_file_name = "E_f_chrm_{}.dat".format(c)
-	# 		E_f_file_path = os.path.join(results_dir_path, E_f_file_name)
-	# 		chrm = chrms[c]
-	# 		sig_chrm = sig_chrms[c]
-	# 		for drop_zeros in [False, True]:
-	# 			# all naive segmentations have been computed by this point
-	# 			num_segs = sig_chrm.get_num_segs(naive_seg_size, drop_zeros)
-	# 			# print("drop_zeros = {}, num_segs = {}".format(drop_zeros,num_segs))
-	# 			# load orig results from file
-	# 			orig_opt_seg = load_seg_results(S_s_file_path, E_f_file_path, chrm.get_mut_array("all"), chrm.get_mut_pos(), num_segs, chrm.group_by, chrm.get_chrm_len(), chrm.type_to_idx)
-	# 			orig_bp_bounds = orig_opt_seg.get_bp_bounds()
-	# 			# compute the new segmentation using the orig boundaries
-	# 			sig_opt_mut_ints = get_mut_ints_from_sig_df_and_bp_bounds(sig_dfs[c], orig_bp_bounds, sig_type_to_idx)
-	# 			sig_opt_seg = OptimalSigSegmentation(sig_type_to_idx, num_segs, sig_opt_mut_ints, orig_bp_bounds)
-	# 			sig_chrm.add_opt_seg(num_segs, sig_opt_seg)
-	# 		print("finished chrm {}".format(c))
-	# 	print("done sig opt segs")
-	# 	for sig_chrm in sig_chrms:
-	# 		sig_chrm.delete_non_ana_data() # doesn't actually do anything here
-	# 	ana_sig_file_name = "{}.pkl".format(ct_id)
-	# 	ana_sig_file_path = os.path.join(ana_sig_dir_path,ana_sig_file_name)
-	# 	with open(ana_sig_file_path, "wb") as pkl_file:
-	# 		pickle.dump(sig_chrms, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
-
-
 if __name__ == "__main__":
 
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--run_dir_path", type=str, default="runs_both_red/90/co", help="path to directory that holds: ana file (after seg), results dir, plots dir")
+	parser.add_argument("--results_dir_name", type=str, default="results", help="name of directory with S_s, E_f, and E_s files") #"/scratch/q/qmorris/youngad2/results")
+	parser.add_argument("--mc_dir_path", type=str, default="mc_data_both", help="path to chromosome data .pkl file, read-only") #"/home/q/qmorris/youngad2/MutSeg/mc_data_mp.pkl")
+	parser.add_argument("--ana_file_name", type=str, default="ana_data.pkl", help="path to analyzsis data .pkl file")
+	parser.add_argument("--naive_seg_size", type=int, default=1000000, help="size of segments in naive segmentation (in bp)")
+	parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "ann", "plt", "seg", "cmi"], default="seg")
+	parser.add_argument("--data_type", type=str, choices=["normal", "alt", "sig"], default="normal")
+	parser.add_argument("--csv_dir_path", type=str, default="for_adamo", help="only useful in \'ann\' mode, path to directory where csvs that need to be annotated will be")
+	parser.add_argument("--num_procs", type=int, default=mp.cpu_count(), help="only useful in \'ann\' mode, number of process to fork")
+	parser.add_argument("--drop_zeros", type=lambda x:bool(strtobool(x)), default=True)
+	parser.add_argument("--plot_dir_name", type=str, default="plots", help="only useful in \'plt\' mode")
+	parser.add_argument("--ana_mode", type=str, choices=["sample_freqs", "counts", "tumour_freqs"], default="counts")
+	parser.add_argument("--tumour_set", type=str, choices=["all", "reduced"], default="reduced", help="set of tumour types to use")
+	# parser.add_argument("--df_sig_file_path", type=str, default="df_sig.pkl")
+	parser.add_argument("--train_split", type=str, choices=["all", "train"], default="all")
+	parser.add_argument("--eval_split", type=str, choices=["all", "train", "valid"], default="all")
+	# parser.add_argument("--num_perms", type=int, default=0)
 	FLAGS = parser.parse_args()
 	print(FLAGS)
 	np.set_printoptions(threshold=1000)
@@ -827,9 +632,6 @@ if __name__ == "__main__":
 		mc_alt_dir_path = mc_dir_path + "_alt"
 		ana_file_path = ana_file_path.rstrip(".pkl") + "_alt.pkl"
 		plot_dir_path += "_alt"
-	elif FLAGS.data_type == "sig":
-		ana_dir_path = ana_file_path.rstrip(".pkl") + "_sig"
-		plot_dir_path += "_sig"
 	if FLAGS.tumour_set == "all":
 		tumour_list = sorted(chrmlib.ALL_SET)
 	else: # FLAGS.tumour_set == "reduced"
@@ -837,67 +639,31 @@ if __name__ == "__main__":
 	if FLAGS.train_split != "all":
 		assert FLAGS.data_type == "normal"
 	ana_file_path = ana_file_path.rstrip(".pkl") + "_{}.pkl".format(FLAGS.train_split)
+
 	if FLAGS.program_mode == "seg":
 		# interpret segmentation results and save them in a file of chromosomes
 		# does not care about drop_zeros since it automatically computes results for both kinds
-		if FLAGS.data_type == "alt":
-			assert FLAGS.tumour_set == "reduced"
-			save_alt_seg_results(results_dir_path, mc_dir_path, mc_alt_dir_path, ana_file_path, FLAGS.naive_seg_size, FLAGS.num_perms)
-		elif FLAGS.data_type == "sig":
-			assert FLAGS.tumour_set == "all"
-			save_sig_seg_results(results_dir_path, mc_dir_path, FLAGS.df_sig_file_path, ana_dir_path, FLAGS.naive_seg_size)
-		else: # FLAGS.data_type == "normal"
-			save_seg_results(results_dir_path, mc_dir_path, ana_file_path, FLAGS.naive_seg_size)
+		assert FLAGS.data_type == "normal"
+		save_seg_results(results_dir_path, mc_dir_path, ana_file_path, FLAGS.naive_seg_size)
 	elif FLAGS.program_mode == "cmi":
 		# compute conditional mutual information for optimal and naive
 		print("drop_zeros ==", FLAGS.drop_zeros)
 		print("train split == {}, eval_split == {}".format(FLAGS.train_split, FLAGS.eval_split))
 		if FLAGS.data_type == "sig":
-			assert os.path.isdir(ana_dir_path)
-			ana_file_names = sorted(os.listdir(ana_dir_path))
-			optimal_results = np.zeros([len(ana_file_names)], dtype=chrmlib.FLOAT_T)
-			naive_results = np.zeros([len(ana_file_names)], dtype=chrmlib.FLOAT_T)
-			for idx, ana_file_name in enumerate(ana_file_names):
-				# print(ana_file_name.rstrip(".pkl"))
-				ana_file_path = os.path.join(ana_dir_path,ana_file_name)
-				optimal_results[idx], naive_results[idx], _ = compute_cmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, None, print_results=False)	
-			print(">>> cell type")
-			print(ana_file_names)
-			print(">>> naive")
-			print(naive_results)
-			print(">>> optimal")
-			print(optimal_results)
-			print(">>> difference")
-			print(optimal_results - naive_results)
+			raise NotImplementedError
 		else:
 			compute_cmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, tumour_list, FLAGS.eval_split)
-		
 	elif FLAGS.program_mode == "tmi":
 		# compute total mutual information for optimal and naive
 		print("drop_zeros ==", FLAGS.drop_zeros)
 		print("train split == {}, eval_split == {}".format(FLAGS.train_split, FLAGS.eval_split))
 		if FLAGS.data_type == "sig":
-			assert os.path.isdir(ana_dir_path)
-			ana_file_names = sorted(os.listdir(ana_dir_path))
-			optimal_results = np.zeros([len(ana_file_names)], dtype=chrmlib.FLOAT_T)
-			naive_results = np.zeros([len(ana_file_names)], dtype=chrmlib.FLOAT_T)
-			for idx, ana_file_name in enumerate(ana_file_names):
-				# print(ana_file_name.rstrip(".pkl"))
-				ana_file_path = os.path.join(ana_dir_path,ana_file_name)
-				optimal_results[idx], naive_results[idx], _ = compute_tmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, None, print_results=False)	
-			print(">>> cell type")
-			print(ana_file_names)
-			print(">>> naive")
-			print(naive_results)
-			print(">>> optimal")
-			print(optimal_results)
-			print(">>> difference")
-			print(optimal_results - naive_results)
+			raise NotImplementedError
 		else:
 			compute_tmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, tumour_list, FLAGS.eval_split)
-	# elif FLAGS.program_mode == "ann":
-	# 	# modify input csvs such that each mutation is annotated with an optimal segment
-	# 	annotate_segs(ana_file_path, FLAGS.naive_seg_size, FLAGS.csv_dir_path, FLAGS.num_procs, FLAGS.drop_zeros)
+	elif FLAGS.program_mode == "ann":
+		# modify input csvs such that each mutation is annotated with an optimal segment
+		raise NotImplementedError
 	elif FLAGS.program_mode == "plt":
 		make_plots(ana_file_path, plot_dir_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.eval_split)
 	else:
