@@ -1,6 +1,5 @@
 """
-Script for preprocessing .csv files and saving the results in a chromosome .pkl file and mutliple .dat files for the C program.
-This script should be run on boltz
+Script for preprocessing .csv files and saving the results in a chromosome .pkl file and mutliple .dat files for the C genomegerrymandering implementation.
 """
 
 
@@ -200,12 +199,12 @@ def train_valid_split(typs_set, mut_entries, valid_frac):
 	return train_num, valid_num, train_idx, valid_idx
 
 
-def preproc(src_dir_path, kat_file_path, donor_file_path, proc_file_path, df_alt_file_path, group_by, num_procs, valid_frac, max_group_dist):
+def preproc(src_dir_path, kat_file_path, donor_file_path, proc_file_path, df_alt_file_path, group_by, num_procs, valid_frac, max_group_dist, both):
 
 	beg_time = time.time()
 	print("[0] starting preproc")
 	alt_typs_set = None
-	use_alt = os.path.isfile(df_alt_file_path)
+	use_alt = both and os.path.isfile(df_alt_file_path)
 	if use_alt:
 		cur_time = time.time()
 		print("[{0:.0f}] loading alt data {1}".format(cur_time-beg_time,df_alt_file_path))
@@ -279,17 +278,19 @@ def preproc(src_dir_path, kat_file_path, donor_file_path, proc_file_path, df_alt
 	print("number skipped", skip_count)
 	print("number of distinct positions", [len(mut_pos[i]) for i in range(len(mut_pos))])
 	print("number of cancer types", len(typs_set))
-	#######
-	temp_data = {
-		"file_count": file_count,
-		"mut_pos": mut_pos,
-		"mut_entries": mut_entries,
-		"typs_set": typs_set,
-		"alt_typs_set": alt_typs_set
-	}
-	with open("tempdump.pkl", "wb") as pkl_file:
-		pickle.dump(temp_data, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
-	#######
+	# #######
+	# temp_data = {
+	# 	"file_count": file_count,
+	# 	"mut_pos": mut_pos,
+	# 	"mut_entries": mut_entries,
+	# 	"typs_set": typs_set,
+	# 	# "alt_typs_set": alt_typs_set
+	# }
+	# if use_alt:
+	# 	temp_data["alt_typs_set"] = alt_typs_set
+	# with open("tempdump.pkl", "wb") as pkl_file:
+	# 	pickle.dump(temp_data, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
+	# #######
 	if use_alt:
 		assert typs_set.issubset(alt_typs_set)
 		alt_ids = sorted(set(alt_df["id"]))
@@ -305,22 +306,25 @@ def preproc(src_dir_path, kat_file_path, donor_file_path, proc_file_path, df_alt
 				mut_pos[c] = mut_pos[c].union(cur_mut_pos)
 			alt_mut_entries.append(alt_entry)
 			print(alt_id, end=",")
-	cur_time = time.time()
-	print( "[{0:.0f}] aggregated all the alt results".format(cur_time-beg_time) )
-	print("number of distinct positions", [len(mut_pos[i]) for i in range(len(mut_pos))])
-	print("number of cancer types", len(typs_set))
-	#######
-	temp_data = {
-		"file_count": file_count,
-		"mut_pos": mut_pos,
-		"mut_entries": mut_entries,
-		"alt_mut_entries": alt_mut_entries,
-		"typs_set": typs_set,
-		"alt_typs_set": alt_typs_set
-	}
-	with open("tempdumpalt.pkl", "wb") as pkl_file:
-		pickle.dump(temp_data, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
-	#######
+		cur_time = time.time()
+		print( "[{0:.0f}] aggregated all the alt results".format(cur_time-beg_time) )
+		print("number of distinct positions", [len(mut_pos[i]) for i in range(len(mut_pos))])
+		print("number of cancer types", len(typs_set))
+		# #######
+		# temp_data = {
+		# 	"file_count": file_count,
+		# 	"mut_pos": mut_pos,
+		# 	"mut_entries": mut_entries,
+		# 	# "alt_mut_entries": alt_mut_entries,
+		# 	"typs_set": typs_set,
+		# 	# "alt_typs_set": alt_typs_set
+		# }
+		# if use_alt:
+		# 	temp_data["alt_typs_set"] = alt_typs_set
+		# 	temp_data["alt_mut_entries"] = alt_mut_entries
+		# with open("tempdumpalt.pkl", "wb") as pkl_file:
+		# 	pickle.dump(temp_data, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
+		# #######
 	chrms = []
 	for c in range(chrmlib.NUM_CHRMS):
 		chrms.append(chrmlib.Chromosome(c))
@@ -339,10 +343,6 @@ def preproc(src_dir_path, kat_file_path, donor_file_path, proc_file_path, df_alt
 				train_num[t] += _train_num[t]
 				valid_num[t] += _valid_num[t]
 			mut_entries.extend(alt_mut_entries)
-		# print(train_num)
-		# print(train_idx)
-		# print(valid_num)
-		# print(valid_idx)
 	else:
 		valid_idx = None
 	for c in range(chrmlib.NUM_CHRMS):
@@ -451,23 +451,6 @@ def preproc_alt(alt_file_path, df_alt_file_path):
 	return chrms
 
 
-def read_cell_type(ct_file_path):
-
-	assert os.path.isfile(ct_file_path)
-	df = pd.read_csv(ct_file_path, skiprows=[0,1])[["Unnamed: 1", "Unnamed: 6"]]
-	df.dropna(inplace=True)
-	df.rename(index=str, columns={"Unnamed: 1": "ct_id", "Unnamed: 6": "ct_name"}, inplace=True)
-	def valid_id(ct_id):
-		if not isinstance(ct_id, str) or not (ct_id[0:2] == "E0" or ct_id[0:2] == "E1"):
-			return False
-		else:
-			return True
-	df["valid_id"] = df["ct_id"].map(valid_id)
-	df = df[df["valid_id"]]
-	df.drop(columns=["valid_id"], inplace=True)
-	return df
-
-
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
@@ -475,20 +458,20 @@ if __name__ == "__main__":
 	parser.add_argument("--kat_file_path", type=str, default="dsets/kataegis/snvs.tsv")
 	parser.add_argument("--donor_file_path", type=str, default="dsets/for_adamo_donors.tsv")
 	parser.add_argument("--alt_file_path", type=str, default="dsets/alt_muts/snvs.csv")
-	parser.add_argument("--mc_dir_path", type=str, default="mc_data_kat")
-	parser.add_argument("--mc_alt_dir_path", type=str, default="mc_data_kat_alt")
-	parser.add_argument("--proc_file_path", type=str, default="proc_kat.pkl")
+	parser.add_argument("--mc_dir_path", type=str, default="mc_data")
+	parser.add_argument("--mc_data_type", type=str, default="normal", choices=["normal", "alt", "both"])
+	parser.add_argument("--proc_file_path", type=str, default="proc.pkl")
 	parser.add_argument("--df_alt_file_path", type=str, default="df_alt.pkl")
 	parser.add_argument("--group_by", type=int, default=100)
-	parser.add_argument("--cfile_dir_path", type=str, default="cfiles_kat", help="directory for .dat files for C program")
+	parser.add_argument("--cfile_dir_path", type=str, default="cfiles", help="directory for .dat files for C program")
 	parser.add_argument("--random_seed", type=int, default=373)
 	parser.add_argument("--num_procs", type=int, default=mp.cpu_count())
 	parser.add_argument("--overwrite", type=lambda x:bool(strtobool(x)), default=False)
-	parser.add_argument("--tumour_set", type=str, choices=["all", "reduced", "small"], default="all", help="set of tumour types to use, only relevant for cfiles")
+	parser.add_argument("--tumour_set", type=str, choices=["all", "reduced", "small"], default="reduced", help="set of tumour types to use, only relevant for cfiles")
 	parser.add_argument("--create_cfiles", type=lambda x:bool(strtobool(x)), default=True)
 	parser.add_argument("--valid_frac", type=float, default=0.3)
-	parser.add_argument("--ct_file_path", type=str, default="dsets/cell_type.csv")
-	parser.add_argument("--max_group_dist", type=int, default=chrmlib.MAX_INT)
+	# parser.add_argument("--ct_file_path", type=str, default="dsets/cell_type.csv")
+	parser.add_argument("--max_group_dist", type=int, default=3000) #chrmlib.MAX_INT)
 	FLAGS = parser.parse_args()
 	if FLAGS.random_seed:
 		np.random.seed(FLAGS.random_seed)
@@ -496,32 +479,59 @@ if __name__ == "__main__":
 	# printing options
 	np.set_printoptions(threshold=1000)
 	pd.options.mode.chained_assignment = None
+	
+
 	# do PCAWG mutation data
-	if not FLAGS.overwrite and os.path.isdir(FLAGS.mc_dir_path):
-		if FLAGS.create_cfiles:
-			print(">>> mc_data exists, loading previous mc_data")
-			chrms = chrmlib.load_mc_data(FLAGS.mc_dir_path)
+	if FLAGS.mc_data_type == "normal":
+		mc_dir_path = FLAGS.mc_dir_path
+		if not FLAGS.overwrite and os.path.isdir(mc_dir_path):
+			if FLAGS.create_cfiles:
+				print(">>> mc_data exists, loading previous mc_data")
+				chrms = chrmlib.load_mc_data(mc_dir_path)
+			else:
+				print(">>> mc_data exists, no need to load")
+				pass
 		else:
-			print(">>> mc_data exists, no need to load")
-			pass
-	else:
-		print(">>> creating new mc_data (with possible overwrite)")
-		chrms = preproc(FLAGS.src_dir_path, FLAGS.kat_file_path, FLAGS.donor_file_path, FLAGS.proc_file_path, FLAGS.df_alt_file_path, FLAGS.group_by, FLAGS.num_procs, FLAGS.valid_frac, FLAGS.max_group_dist)
-		chrmlib.save_mc_data(FLAGS.mc_dir_path, chrms)
+			print(">>> creating new mc_data (with possible overwrite)")
+			chrms = preproc(FLAGS.src_dir_path, FLAGS.kat_file_path, FLAGS.donor_file_path, FLAGS.proc_file_path, "", FLAGS.group_by, FLAGS.num_procs, FLAGS.valid_frac, FLAGS.max_group_dist, False)
+			chrmlib.save_mc_data(mc_dir_path, chrms)
+	
 	# do alternate mutation data
-	if not FLAGS.overwrite and os.path.isdir(FLAGS.mc_alt_dir_path):
-		print(">>> alt data exists, no need to load")
-		pass
-	else:
-		print(">>> creating new alt data (with possible overwrite)")
-		alt_chrms = preproc_alt(FLAGS.alt_file_path, FLAGS.df_alt_file_path)
-		chrmlib.save_mc_data(FLAGS.mc_alt_dir_path, alt_chrms)
+	elif FLAGS.mc_data_type == "alt":
+		assert not FLAGS.create_cfiles
+		assert FLAGS.valid_frac == 0.
+		mc_dir_path = FLAGS.mc_dir_path + "_alt"
+		if not FLAGS.overwrite and os.path.isdir(mc_dir_path):
+			print(">>> alt data exists, no need to load")
+			pass
+		else:
+			print(">>> creating new alt data (with possible overwrite)")
+			chrms = preproc_alt(FLAGS.alt_file_path, FLAGS.df_alt_file_path)
+			chrmlib.save_mc_data(mc_dir_path, chrms)
+	
+	# do both
+	elif FLAGS.mc_data_type == "both":
+		mc_dir_path = FLAGS.mc_dir_path + "_both"
+		if not FLAGS.overwrite and os.path.isdir(mc_dir_path):
+			if FLAGS.create_cfiles:
+				print(">>> both mc_data exists, loading previous both mc_data")
+				chrms = chrmlib.load_mc_data(mc_dir_path)
+			else:
+				print(">>> both mc_data exists, no need to load")
+				pass
+		else:
+			print(">>> creating both mc_data (with possible overwrite)")
+			chrms = preproc(FLAGS.src_dir_path, FLAGS.kat_file_path, FLAGS.donor_file_path, FLAGS.proc_file_path, FLAGS.df_alt_file_path, FLAGS.group_by, FLAGS.num_procs, FLAGS.valid_frac, FLAGS.max_group_dist, True)
+			chrmlib.save_mc_data(mc_dir_path, chrms)
+
 	# do the cfiles directory
 	if FLAGS.create_cfiles:
 		# if FLAGS.group_by > 1:
 		# 	assert all([chrm.group_by == FLAGS.group_by for chrm in chrms])
 		# 	assert all([chrm.max_group_dist == FLAGS.max_group_dist for chrm in chrms])
 		cfile_dir_path_base = FLAGS.cfile_dir_path
+		if FLAGS.mc_data_type == "both":
+			cfile_dir_path_base += "_both"
 		if FLAGS.tumour_set == "all":
 			tumour_list = sorted(chrmlib.ALL_SET)
 		elif FLAGS.tumour_set == "reduced":

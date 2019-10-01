@@ -1,6 +1,5 @@
 """
-Script for intepreting and saving segmentation results.
-This script should be run on boltz.
+Script for intepreting, saving, and plotting segmentation results.
 """
 
 
@@ -19,9 +18,6 @@ from distutils.util import strtobool
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib import rc
-
-# rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-# rc('text', usetex=True)
 
 
 def median(a, b):
@@ -159,13 +155,6 @@ def compute_h_from_ints_array(ints_array):
 
 def compute_cmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_list, eval_split, print_results=True):
 	""" 
-	cmi -- conditional mutual information I(B;T|C)
-	T is cancer type
-	B is segmentation boundary
-	C is chromosome
-	I is mutual information
-	H is entropy
-	tumour_list is None only when using the sig data
 	"""
 	# load chrm data
 	with open(ana_file_path, "rb") as pkl_file:
@@ -189,25 +178,6 @@ def compute_cmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 		ints_array[c,:num_segs[c],:] = seg.get_mut_ints(ana_mode, tumour_list)
 	# un_opt_cmi_1, optimal_cmi = compute_cmi_from_ints_array(ints_array)
 	optimal_cv = compute_cmi_from_ints_array(ints_array)
-	perm_cvs = []
-	if chrms[0].perm_segmentations:
-		# analyze permutation stuff
-		perm_segs = [chrms[c].get_perm_segs(num_segs[c],drop_zeros) for c in range(chrmlib.NUM_CHRMS)]
-		for p in range(len(perm_segs[0])):
-			ints_array = np.zeros([chrmlib.NUM_CHRMS, max_num_segs, T], dtype=chrmlib.FLOAT_T)
-			for c in range(chrmlib.NUM_CHRMS):
-				perm_seg = perm_segs[c][p]
-				ints_array[c,:num_segs[c],:] = perm_seg.get_mut_ints(ana_mode, tumour_list)
-			perm_cv = compute_cmi_from_ints_array(ints_array)
-			perm_cvs.append(perm_cv)
-			# print("finished perm", p)
-	num_perms = len(perm_cvs)
-	# if not drop_zeros:
-	# 	# use alternate seg score approach for computing information
-	# 	un_opt_cmi_2 = seg_scores + compute_h_from_ints_array(ints_array)
-	# 	# verify that they are similar
-	# 	assert np.isclose(un_opt_cmi_1, un_opt_cmi_2).all()
-	# compute naive cmi
 	ints_array = np.zeros([chrmlib.NUM_CHRMS, max_num_segs, T], dtype=chrmlib.FLOAT_T)
 	naive_seg_mut_ints = [chrm.get_naive_seg(naive_seg_size, eval_split).get_mut_ints(drop_zeros, ana_mode, tumour_list) for chrm in chrms]
 	for c in range(chrmlib.NUM_CHRMS):
@@ -219,9 +189,6 @@ def compute_cmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 			print("optimal {} = {}".format(cv,nats_to_bits(optimal_cv[cv])))
 			print("naive {} = {}".format(cv,nats_to_bits(naive_cv[cv])))
 			print("diff {} = {}".format(cv,nats_to_bits(optimal_cv[cv]-naive_cv[cv])))
-			# if perm_cvs:
-			# 	print("perm cmis: mean = {}, stddev = {}, stderr = {}".format(nats_to_bits(np.mean(perm_cmis)), nats_to_bits(np.std(perm_cmis)), nats_to_bits(np.std(perm_cmis)/np.sqrt(num_perms))))
-			# 	print("opt-perm cmi difference", nats_to_bits(optimal_cmi-np.mean(perm_cmis)))
 	return None
 
 
@@ -356,9 +323,6 @@ def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 			print("optimal {} = {}".format(tv,nats_to_bits(optimal_tv[tv])))
 			print("naive {} = {}".format(tv,nats_to_bits(naive_tv[tv])))
 			print("diff {} = {}".format(tv,nats_to_bits(optimal_tv[tv]-naive_tv[tv])))
-		# if perm_tmis:
-		# 	print("perm tmis: mean = {}, stddev = {}, stderr = {}".format(nats_to_bits(np.mean(perm_tmis)), nats_to_bits(np.std(perm_tmis)), nats_to_bits(np.std(perm_tmis)/np.sqrt(num_perms))))
-		# 	print("opt-perm tmi difference", nats_to_bits(optimal_tmi-np.mean(perm_tmis)))
 	return None
 
 
@@ -386,7 +350,8 @@ def plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
 		kde=False,
 		norm_hist=False,
 		# bins=500,
-		bins=[i / 1000000 for i in range(0, 5000000, 100000)]
+		bins=[i / 1000000 for i in range(0, 5000000, 100000)],
+		label="opt"
 	)
 	plt_name = "opt_seg_sizes"
 	if drop_zeros:
@@ -395,12 +360,13 @@ def plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
 		plt_name += "_z"
 	plt_name += "_{}".format(eval_split)
 	ax.set(
-		xlabel="genomic length of segment (Mbp)",
+		xlabel="genomic length of segment (Mb)",
 		ylabel="counts",
 		xlim=[-0.1,5],
 		# title=plt_name
 	)
-	ax.text(0.75, 0.85, f"total = {sum(num_segs)}", fontsize=10, transform=ax.transAxes)
+	ax.legend()
+	# ax.text(0.75, 0.85, f"total = {sum(num_segs)}", fontsize=10, transform=ax.transAxes)
 	plt_path = os.path.join(plot_dir_path,plt_name)
 	plt.savefig(plt_path)
 	plt.clf()
@@ -422,10 +388,6 @@ def plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_s
 			seg_mut_counts[0][cur_seg_idx+s] = np.sum(chrms[c].num_mut_pos_g[start_idx:end_idx])
 		cur_seg_idx += num_segs[c]
 	assert cur_seg_idx == seg_mut_counts.shape[1]
-	# group_by = opt_segs[0].group_by
-	# if group_by:
-	# 	assert np.all([opt_seg.group_by == group_by for opt_seg in opt_segs])
-	# 	seg_mut_counts[0] = group_by*seg_mut_counts[0]
 	# get naive mutation counts - never grouped
 	naive_segs = [chrm.get_naive_seg(naive_seg_size, eval_split) for chrm in chrms]
 	cur_seg_idx = 0
@@ -534,7 +496,7 @@ def plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_s
 
 def make_plots(ana_file_path, plot_dir_path, naive_seg_size, drop_zeros, eval_split):
 
-	assert os.path.isfile(ana_file_path)
+	assert os.path.isfile(ana_file_path), ana_file_path
 	os.makedirs(plot_dir_path, exist_ok=True)
 	with open(ana_file_path, "rb") as pkl_file:
 		chrms = pickle.load(pkl_file)
@@ -560,65 +522,55 @@ def get_opt_seg_from_bp_bounds(mut_ints, mut_pos, num_segs, bp_bounds, type_to_i
 	return seg
 
 
-def save_alt_seg_results(results_dir_path, mc_dir_path, mc_alt_dir_path, ana_alt_file_path, naive_seg_size, num_perms):
+def save_alt_seg_results(results_dir_path, mc_dir_path, mc_alt_dir_path, ana_alt_file_path, naive_seg_size):
 
-	raise NotImplementedError
-	# print(results_dir_path)
-	# print(mc_dir_path)
-	# print(mc_alt_dir_path)
-	# print(ana_alt_file_path)
-	# assert os.path.isdir(mc_dir_path), mc_dir_path
-	# assert os.path.isdir(mc_alt_dir_path), mc_alt_dir_path
-	# # assert os.path.isfile(ana_alt_file_path)
-	# chrms = chrmlib.load_mc_data(mc_dir_path)
-	# alt_chrms = chrmlib.load_mc_data(mc_alt_dir_path)
-	# for c in range(chrmlib.NUM_CHRMS):
-	# 	S_s_file_name = "S_s_chrm_{}.dat".format(c)
-	# 	S_s_file_path = os.path.join(results_dir_path, S_s_file_name)
-	# 	E_f_file_name = "E_f_chrm_{}.dat".format(c)
-	# 	E_f_file_path = os.path.join(results_dir_path, E_f_file_name)
-	# 	chrm = chrms[c]
-	# 	alt_chrm = alt_chrms[c]
-	# 	for drop_zeros in [False, True]:
-	# 		num_segs = alt_chrm.get_num_segs(naive_seg_size, drop_zeros)
-	# 		orig_opt_seg = load_seg_results(S_s_file_path, E_f_file_path, chrm.get_mut_array("all"), chrm.get_mut_pos(), num_segs, chrm.group_by, chrm.get_chrm_len(), chrm.type_to_idx)
-	# 		orig_bp_bounds = orig_opt_seg.get_bp_bounds()
-	# 		alt_mut_array = alt_chrm.get_mut_array("all")
-	# 		alt_mut_pos = alt_chrm.get_mut_pos()
-	# 		alt_opt_seg = get_opt_seg_from_bp_bounds(alt_mut_array, alt_mut_pos, num_segs, orig_bp_bounds, alt_chrm.type_to_idx)
-	# 		alt_chrm.add_opt_seg(num_segs, alt_opt_seg)
-	# 		# exits here if num_perms == 0
-	# 		perm_bp_bounds = permute_bp_bounds(orig_bp_bounds, num_perms)
-	# 		for cur_bp_bounds in perm_bp_bounds:
-	# 			cur_perm_seg = get_opt_seg_from_bp_bounds(alt_mut_array, alt_mut_pos, num_segs, cur_bp_bounds, alt_chrm.type_to_idx)
-	# 			alt_chrm.add_perm_seg(num_segs, drop_zeros, cur_perm_seg)
-	# 	print("finished chrm {}".format(c))
-	# for alt_chrm in alt_chrms:
-	# 	alt_chrm.delete_non_ana_data() # should actually do nothing in this case
-	# with open(ana_alt_file_path, "wb") as pkl_file:
-	# 	pickle.dump(alt_chrms, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
+	print(results_dir_path)
+	print(mc_dir_path)
+	print(mc_alt_dir_path)
+	print(ana_alt_file_path)
+	assert os.path.isdir(mc_dir_path), mc_dir_path
+	assert os.path.isdir(mc_alt_dir_path), mc_alt_dir_path
+	# assert os.path.isfile(ana_alt_file_path)
+	chrms = chrmlib.load_mc_data(mc_dir_path)
+	alt_chrms = chrmlib.load_mc_data(mc_alt_dir_path)
+	for c in range(chrmlib.NUM_CHRMS):
+		S_s_file_name = "S_s_chrm_{}.dat".format(c)
+		S_s_file_path = os.path.join(results_dir_path, S_s_file_name)
+		E_f_file_name = "E_f_chrm_{}.dat".format(c)
+		E_f_file_path = os.path.join(results_dir_path, E_f_file_name)
+		chrm = chrms[c]
+		alt_chrm = alt_chrms[c]
+		for drop_zeros in [False, True]:
+			num_segs = alt_chrm.get_num_segs(naive_seg_size, drop_zeros, "all")
+			orig_opt_seg = load_seg_results(S_s_file_path, E_f_file_path, chrm.get_mut_array("all"), chrm.get_mut_pos(), num_segs, chrm.group_by, chrm.get_chrm_len(), chrm.type_to_idx)
+			orig_bp_bounds = orig_opt_seg.get_bp_bounds()
+			alt_mut_array = alt_chrm.get_mut_array("all")
+			alt_mut_pos = alt_chrm.get_mut_pos()
+			alt_opt_seg = get_opt_seg_from_bp_bounds(alt_mut_array, alt_mut_pos, num_segs, orig_bp_bounds, alt_chrm.type_to_idx)
+			alt_chrm.add_opt_seg(num_segs, "all", alt_opt_seg)
+		print("finished chrm {}".format(c))
+	for alt_chrm in alt_chrms:
+		alt_chrm.delete_non_ana_data() # should actually do nothing in this case
+	with open(ana_alt_file_path, "wb") as pkl_file:
+		pickle.dump(alt_chrms, pkl_file, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--run_dir_path", type=str, default="runs_both_red/90/co", help="path to directory that holds: ana file (after seg), results dir, plots dir")
-	parser.add_argument("--results_dir_name", type=str, default="results", help="name of directory with S_s, E_f, and E_s files") #"/scratch/q/qmorris/youngad2/results")
-	parser.add_argument("--mc_dir_path", type=str, default="mc_data_both", help="path to chromosome data .pkl file, read-only") #"/home/q/qmorris/youngad2/MutSeg/mc_data_mp.pkl")
-	parser.add_argument("--ana_file_name", type=str, default="ana_data.pkl", help="path to analyzsis data .pkl file")
+	parser.add_argument("--run_dir_path", type=str, default="runs_both_red/90_1.0/co", help="path to directory that holds: ana file (after seg), results dir, plots dir")
+	parser.add_argument("--results_dir_name", type=str, default="results", help="name of directory with S_s, E_f, and E_s files")
+	parser.add_argument("--mc_dir_path", type=str, default="mc_data_both", help="path to chromosome data .pkl file, read-only")
+	parser.add_argument("--ana_file_name", type=str, default="ana_data.pkl", help="name of analysis data .pkl file")
 	parser.add_argument("--naive_seg_size", type=int, default=1000000, help="size of segments in naive segmentation (in bp)")
-	parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "ann", "plt", "seg", "cmi"], default="seg")
-	parser.add_argument("--data_type", type=str, choices=["normal", "alt", "sig"], default="normal")
-	parser.add_argument("--csv_dir_path", type=str, default="for_adamo", help="only useful in \'ann\' mode, path to directory where csvs that need to be annotated will be")
-	parser.add_argument("--num_procs", type=int, default=mp.cpu_count(), help="only useful in \'ann\' mode, number of process to fork")
+	parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "plt", "seg", "cmi"], default="seg")
+	parser.add_argument("--data_type", type=str, choices=["normal", "alt"], default="normal")
 	parser.add_argument("--drop_zeros", type=lambda x:bool(strtobool(x)), default=True)
 	parser.add_argument("--plot_dir_name", type=str, default="plots", help="only useful in \'plt\' mode")
 	parser.add_argument("--ana_mode", type=str, choices=["sample_freqs", "counts", "tumour_freqs"], default="counts")
 	parser.add_argument("--tumour_set", type=str, choices=["all", "reduced"], default="reduced", help="set of tumour types to use")
-	# parser.add_argument("--df_sig_file_path", type=str, default="df_sig.pkl")
 	parser.add_argument("--train_split", type=str, choices=["all", "train"], default="all")
 	parser.add_argument("--eval_split", type=str, choices=["all", "train", "valid"], default="all")
-	# parser.add_argument("--num_perms", type=int, default=0)
 	FLAGS = parser.parse_args()
 	print(FLAGS)
 	np.set_printoptions(threshold=1000)
@@ -643,27 +595,22 @@ if __name__ == "__main__":
 	if FLAGS.program_mode == "seg":
 		# interpret segmentation results and save them in a file of chromosomes
 		# does not care about drop_zeros since it automatically computes results for both kinds
-		assert FLAGS.data_type == "normal"
-		save_seg_results(results_dir_path, mc_dir_path, ana_file_path, FLAGS.naive_seg_size)
+		if FLAGS.data_type == "normal":
+			save_seg_results(results_dir_path, mc_dir_path, ana_file_path, FLAGS.naive_seg_size)
+		elif FLAGS.data_type == "alt":
+			save_alt_seg_results(results_dir_path, mc_dir_path, mc_alt_dir_path, ana_file_path, FLAGS.naive_seg_size)
+		else:
+			raise NotImplementedError
 	elif FLAGS.program_mode == "cmi":
 		# compute conditional mutual information for optimal and naive
 		print("drop_zeros ==", FLAGS.drop_zeros)
 		print("train split == {}, eval_split == {}".format(FLAGS.train_split, FLAGS.eval_split))
-		if FLAGS.data_type == "sig":
-			raise NotImplementedError
-		else:
-			compute_cmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, tumour_list, FLAGS.eval_split)
+		compute_cmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, tumour_list, FLAGS.eval_split)
 	elif FLAGS.program_mode == "tmi":
 		# compute total mutual information for optimal and naive
 		print("drop_zeros ==", FLAGS.drop_zeros)
 		print("train split == {}, eval_split == {}".format(FLAGS.train_split, FLAGS.eval_split))
-		if FLAGS.data_type == "sig":
-			raise NotImplementedError
-		else:
-			compute_tmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, tumour_list, FLAGS.eval_split)
-	elif FLAGS.program_mode == "ann":
-		# modify input csvs such that each mutation is annotated with an optimal segment
-		raise NotImplementedError
+		compute_tmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, tumour_list, FLAGS.eval_split)
 	elif FLAGS.program_mode == "plt":
 		make_plots(ana_file_path, plot_dir_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.eval_split)
 	else:

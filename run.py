@@ -27,7 +27,7 @@ def today_date():
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--cfile_dir_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/cfiles_both")
+	parser.add_argument("--cfile_dir_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/cfiles_both_red")
 	parser.add_argument("--mode", type=str, choices=["counts", "sample_freqs", "tumour_freqs"], default="counts")
 	parser.add_argument("--chrm_id", type=int, default=-1, choices=list(range(-1,22)), help="chromosome id (starts at 0)")
 	parser.add_argument("--naive_seg_size", type=int, default=1000000) # 1 Megabase
@@ -38,15 +38,13 @@ if __name__ == "__main__":
 	parser.add_argument("--script_dir_path", type=str, default="/home/q/qmorris/youngad2/MutSeg/scripts", help="directory for creating bash scripts")
 	parser.add_argument("--overwrite", type=lambda x:bool(strtobool(x)), default=False)
 	parser.add_argument("--tumour_set", type=str, choices=["all", "reduced"], default="reduced", help="set of tumour types to use")
-	parser.add_argument("--tv_split", type=str, choices=["all", "train"], default="all")
+	parser.add_argument("--train_split", type=str, choices=["all", "train"], default="all")
 	parser.add_argument("--min_size", type=int, default=1)
 	parser.add_argument("--h_pen", type=float, default=1.0)
 	FLAGS = parser.parse_args()
-	if FLAGS.tumour_set == "all":
-		cfile_dir_path = FLAGS.cfile_dir_path
-	else:
-		cfile_dir_path = FLAGS.cfile_dir_path + "_red"
-	cfile_dir_path = os.path.join(cfile_dir_path,FLAGS.mode,FLAGS.tv_split)
+	if FLAGS.tumour_set == "reduced":
+		assert FLAGS.cfile_dir_path.rstrip("/").endswith("_red"), FLAGS.cfile_dir_path
+	cfile_dir_path = os.path.join(FLAGS.cfile_dir_path,FLAGS.mode,FLAGS.train_split)
 	print(cfile_dir_path)
 	assert os.path.isdir(cfile_dir_path)
 	run_file_path = os.path.join(cfile_dir_path,"run_data.pkl")
@@ -89,7 +87,7 @@ if __name__ == "__main__":
 		output_dir_path += "_sf"
 	elif FLAGS.mode == "tumour_freqs":
 		output_dir_path += "_tf"
-	output_dir_path = os.path.join(output_dir_path,FLAGS.tv_split)
+	output_dir_path = os.path.join(output_dir_path,FLAGS.train_split)
 	os.makedirs(output_dir_path, exist_ok=True)
 	results_dir_path = os.path.join(output_dir_path,"results")
 	os.makedirs(results_dir_path, exist_ok=True)
@@ -112,7 +110,7 @@ if __name__ == "__main__":
 		script_dir_path += "_sf"
 	elif FLAGS.mode == "tumour_freqs":
 		script_dir_path += "_tf"
-	script_dir_path += "_" + FLAGS.tv_split
+	script_dir_path += "_" + FLAGS.train_split
 	os.makedirs(script_dir_path, exist_ok=True)
 	if FLAGS.tumour_set == "all":
 		tumour_list = sorted(chrmlib.ALL_SET)
