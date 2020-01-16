@@ -15,9 +15,10 @@ import multiprocessing as mp
 import ctypes
 import pandas as pd
 from distutils.util import strtobool
+# plotting imports
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
-from matplotlib import rc
 
 
 def median(a, b):
@@ -153,7 +154,7 @@ def compute_h_from_ints_array(ints_array):
 	return H_of_T_given_C
 
 
-def compute_cmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_list, eval_split, print_results=True):
+def compute_cmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_list, eval_split):
 	""" 
 	"""
 	# load chrm data
@@ -183,12 +184,6 @@ def compute_cmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 	for c in range(chrmlib.NUM_CHRMS):
 		ints_array[c,:num_segs[c],:] = naive_seg_mut_ints[c]
 	naive_cv = compute_cmi_from_ints_array(ints_array)
-	if print_results:
-		for cv in optimal_cv:
-			print(">>> {}".format(cv))
-			print("optimal {} = {}".format(cv,nats_to_bits(optimal_cv[cv])))
-			print("naive {} = {}".format(cv,nats_to_bits(naive_cv[cv])))
-			print("diff {} = {}".format(cv,nats_to_bits(optimal_cv[cv]-naive_cv[cv])))
 	return None
 
 
@@ -268,7 +263,7 @@ def compute_tmi_from_ints_array(ints_array, num_segs):
 	return total_vals
 
 
-def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_list, eval_split, print_results=True):
+def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_list, eval_split):
 	"""
 	tmi -- total mutual information I(B;T)
 	I(B;T) = I(B;T|C) - H(C|T) - H(C|B) + H(C|B,T) + H(C)
@@ -295,19 +290,6 @@ def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 		seg = chrms[c].get_opt_seg(num_segs[c], eval_split)
 		ints_array[c,:num_segs[c],:] = seg.get_mut_ints(ana_mode, tumour_list)
 	optimal_tv = compute_tmi_from_ints_array(ints_array, num_segs)
-	perm_tvs = []
-	if chrms[0].perm_segmentations:
-		# analyze permutation stuff
-		perm_segs = [chrms[c].get_perm_segs(num_segs[c],drop_zeros) for c in range(chrmlib.NUM_CHRMS)]
-		for p in range(len(perm_segs[0])):
-			ints_array = np.zeros([chrmlib.NUM_CHRMS, max_num_segs, T], dtype=chrmlib.FLOAT_T)
-			for c in range(chrmlib.NUM_CHRMS):
-				perm_seg = perm_segs[c][p]
-				ints_array[c,:num_segs[c],:] = perm_seg.get_mut_ints(ana_mode, tumour_list)
-			perm_tv = compute_tmi_from_ints_array(ints_array, num_segs)
-			perm_tvs.append(perm_tv)
-			# print("finished perm", p)
-	num_perms = len(perm_tvs)
 	# compute naive tmi
 	num_segs = [chrm.get_num_segs(naive_seg_size, drop_zeros, eval_split) for chrm in chrms]
 	max_num_segs = max(num_segs)
@@ -317,12 +299,6 @@ def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 	for c in range(num_chrms):
 		ints_array[c,:num_segs[c],:] = naive_seg_mut_ints[c]
 	naive_tv = compute_tmi_from_ints_array(ints_array, num_segs)
-	if print_results:
-		for tv in optimal_tv:
-			print(">>> {}".format(tv))
-			print("optimal {} = {}".format(tv,nats_to_bits(optimal_tv[tv])))
-			print("naive {} = {}".format(tv,nats_to_bits(naive_tv[tv])))
-			print("diff {} = {}".format(tv,nats_to_bits(optimal_tv[tv]-naive_tv[tv])))
 	return None
 
 
@@ -437,71 +413,110 @@ def plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_s
 	plt.savefig(plt_path)
 	plt.clf()
 
-	# # plot the 
-	# mut_thresh = 1000
-	# opt_thresh_segs = np.nonzero(seg_mut_counts[0] <= mut_thresh)[0]
-	# opt_thresh_mut_counts = seg_mut_counts[0][opt_thresh_segs]
-	# ax = sns.distplot(
-	# 	opt_thresh_mut_counts,
-	# 	kde=False,
-	# 	norm_hist=False,
-	# 	bins=10
-	# )
-	# plt_name = "opt_{}_mut_seg_mut_counts_{}MB".format(mut_thresh, naive_seg_size // 1000000)
-	# if drop_zeros:
-	# 	plt_name += "_nz"
-	# ax.set(
-	# 	xlabel="number of distinct mutations in segment",
-	# 	ylabel="counts",
-	# 	title=plt_name)
-	# plt_path = os.path.join(plot_dir_path,plt_name)
-	# plt.savefig(plt_path)
-	# plt.clf()
 
-	# # plot the real sizes of the minimum optimal segments
-	# mut_threshes = [100, 1000]
-	# opt_seg_sizes = []
-	# for c in range(len(chrms)):
-	# 	# seg_sizes = np.zeros(num_segs[c], dtype=chrmlib.INT_T)
-	# 	seg_bp_bounds = opt_segs[c].get_bp_bounds()
-	# 	for s in range(num_segs[c]):
-	# 		# seg_sizes[s] = seg_bp_bounds[s+1] - seg_bp_bounds[s]
-	# 		opt_seg_sizes.append(seg_bp_bounds[s+1] - seg_bp_bounds[s])
-	# opt_seg_sizes = np.array(opt_seg_sizes, dtype=np.float)
-	# for m in range(len(mut_threshes)):
-	# 	mut_thresh = mut_threshes[m]
-	# 	opt_thresh_segs = np.nonzero(seg_mut_counts[0] <= mut_thresh)[0]
-	# 	print(f"mut_thresh = {mut_thresh}, num opt_min_segs = {len(opt_thresh_segs)}")
-	# 	opt_thresh_sizes = opt_seg_sizes[opt_thresh_segs]
-	# 	print(f"min = {np.min(opt_thresh_sizes)}, max = {np.max(opt_thresh_sizes)}, mean = {np.mean(opt_thresh_sizes)}, median = {np.median(opt_thresh_sizes)}")
-	# 	plt_name = "opt_{}_mut_seg_sizes_{}MB".format(mut_thresh, naive_seg_size // 1000000)
-	# 	if drop_zeros:
-	# 		plt_name += "_nz"
-	# 	ax = sns.distplot(
-	# 		opt_thresh_sizes / 1000000,
-	# 		kde=False,
-	# 		norm_hist=False,
-	# 		bins=[i / 1000000 for i in range(0, 5000000, 100000)]
-	# 	)
-	# 	ax.set(
-	# 		xlabel="segment size (Mbp)",
-	# 		ylabel="counts",
-	# 		title=plt_name
-	# 	)
-	# 	ax.text(0.75, 0.85, f"total = {len(opt_thresh_segs)}", fontsize=10, transform=ax.transAxes)
-	# 	plt_path = os.path.join(plot_dir_path,plt_name)
-	# 	plt.savefig(plt_path)
-	# 	plt.clf()
+def plot_chrms(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list):
+
+	# set plotting settings
+	# requires latex to be installed
+	# sudo apt install texlive-latex-base, texlive-latex-extra, dvipng
+	# warning: > 1GB install
+	font_dict = {
+		'family':'sans-serif',
+		'sans-serif':['Computer Modern'],
+		'size': 32
+	}
+	mpl.rc('font',**font_dict)
+	mpl.rc('text',usetex=True)
+
+	for c, chrm in enumerate(chrms):
+		print("plotting chrm {}".format(c))
+		chrm_len = chrm.get_chrm_len()
+		chrm_num = chrm.get_chrm_num()
+		assert chrm_num == c+1
+		# get naive
+		naive_seg = chrm.get_naive_seg(naive_seg_size,eval_split)
+		naive_bp_bounds = naive_seg.get_bp_bounds(False)
+		naive_mut_ints = naive_seg.get_mut_ints(False,ana_mode,tumour_list)
+		# get opt
+		opt_num_segs = chrm.get_num_segs(naive_seg_size, drop_zeros, eval_split)
+		opt_seg = chrm.get_opt_seg(opt_num_segs, eval_split)
+		opt_bp_bounds = opt_seg.get_bp_bounds()
+		opt_mut_ints = opt_seg.get_mut_ints(ana_mode,tumour_list)
+		# prepare data
+		naive_mut_ints = np.sum(naive_mut_ints, axis=1)
+		opt_mut_ints = np.sum(opt_mut_ints, axis=1)
+		max_mut_int = max(np.max(naive_mut_ints), np.max(opt_mut_ints))
+		max_mut_int = int(np.ceil(max_mut_int / 1000.0)*1000.0)
+		naive_mut_colors = np.floor((1. - (naive_mut_ints / max_mut_int))*255.9).astype(np.int)
+		opt_mut_colors = np.floor((1. - (opt_mut_ints / max_mut_int))*255.9).astype(np.int)
+		naive_bp_sizes = np.array([naive_bp_bounds[i+1] - naive_bp_bounds[i] for i in range(len(naive_bp_bounds)-1)])
+		opt_bp_sizes = np.array([opt_bp_bounds[i+1] - opt_bp_bounds[i] for i in range(len(opt_bp_bounds)-1)])
+		assert np.sum(naive_bp_sizes) == chrm_len
+		assert np.sum(opt_bp_sizes) == chrm_len
+		# get the plot file path
+		assert os.path.isdir(plot_dir_path)
+		plot_dp = os.path.join(plot_dir_path,"chrm_comp")
+		os.makedirs(plot_dp,exist_ok=True)
+		plot_fp = os.path.join(plot_dp,"chrm_comp_{0:02}".format(chrm_num))
+		# create the plot
+		fig, ax = plt.subplots(figsize=[10,10])
+		seg_color1 = "#f4da09" # yellow
+		seg_color2 = "#0000cc" # blue
+		x_pos = [0.5,1.0,1.75,2.25]
+		width = 0.40
+		# naive first
+		_ = ax.bar(x_pos[0], naive_bp_sizes[0], width, color=seg_color1)
+		mut_color = "#{0:02x}{0:02x}{0:02x}".format(naive_mut_colors[0])
+		_ = ax.bar(x_pos[1], naive_bp_sizes[0], width, color=mut_color)
+		for i in range(1,len(naive_mut_ints)):
+			prev_seg_size = np.sum(naive_bp_sizes[:i])
+			seg_color = (seg_color1 if i % 2 == 0 else seg_color2)
+			_ = ax.bar(x_pos[0], naive_bp_sizes[i], width, color=seg_color, bottom=prev_seg_size)
+			mut_color = "#{0:02x}{0:02x}{0:02x}".format(naive_mut_colors[i])
+			_ = ax.bar(x_pos[1], naive_bp_sizes[i], width, color=mut_color, bottom=prev_seg_size)
+		# then opt
+		_ = ax.bar(x_pos[2], opt_bp_sizes[0], width, color=seg_color1)
+		mut_color = "#{0:02x}{0:02x}{0:02x}".format(opt_mut_colors[0])
+		_ = ax.bar(x_pos[3], opt_bp_sizes[0], width, color=mut_color)
+		for i in range(1,len(opt_mut_ints)):
+			prev_seg_size = np.sum(opt_bp_sizes[:i])
+			seg_color = (seg_color1 if i % 2 == 0 else seg_color2)
+			_ = ax.bar(x_pos[2], opt_bp_sizes[i], width, color=seg_color, bottom=prev_seg_size)
+			mut_color = "#{0:02x}{0:02x}{0:02x}".format(opt_mut_colors[i])
+			_ = ax.bar(x_pos[3], opt_bp_sizes[i], width, color=mut_color, bottom=prev_seg_size)
+		cmap = plt.get_cmap("gray_r",1000)
+		norm = mpl.colors.Normalize(vmin=0.0,vmax=1.0)
+		sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+		sm.set_array([])
+		cbar = fig.colorbar(sm,boundaries=np.arange(0.0,1.001,0.001))
+		cbar.set_ticks(np.arange(0.0,1.1,0.25))
+		cbar.set_ticklabels(np.arange(0.0,1.1*max_mut_int/1000.0,0.25*max_mut_int/1000.0).astype(np.int))
+		cbar.set_label("Mutation count (thousands)",rotation=270,labelpad=40)
+		ax.set_xticks([np.mean(x_pos[0:2]),np.mean(x_pos[2:4])])
+		ax.set_xticklabels(['Naive', 'Optimal'])
+		ax.set_xlim(0.0,x_pos[3]+0.5)
+		ax.tick_params(axis='x', pad=10)
+		max_tick = int(np.around(chrm_len,decimals=-6)) #int(np.ceil(chrm_len / (20*chrmlib.MB))*(20*chrmlib.MB))
+		ax.set_yticks(np.arange(0, max_tick+1, 20*chrmlib.MB))
+		ax.set_yticklabels(np.arange(0, int(np.floor(max_tick / chrmlib.MB))+1, 20))
+		ax.set_ylabel("Position (Mb)",labelpad=20)
+		# fig.suptitle("Chromosome {}".format(chrm_num),y=0.95)
+		plt.tight_layout()
+		plt.savefig(plot_fp+".pdf",format="pdf")
+		plt.savefig(plot_fp+".png",format="png")
+		plt.close()
+		# quit()
 
 
-def make_plots(ana_file_path, plot_dir_path, naive_seg_size, drop_zeros, eval_split):
-
+def make_plots(ana_file_path, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list):
+	
 	assert os.path.isfile(ana_file_path), ana_file_path
 	os.makedirs(plot_dir_path, exist_ok=True)
 	with open(ana_file_path, "rb") as pkl_file:
 		chrms = pickle.load(pkl_file)
-	plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
-	plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
+	#plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
+	#plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
+	plot_chrms(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list)
 
 
 def get_opt_seg_from_bp_bounds(mut_ints, mut_pos, num_segs, bp_bounds, type_to_idx):
@@ -612,6 +627,6 @@ if __name__ == "__main__":
 		print("train split == {}, eval_split == {}".format(FLAGS.train_split, FLAGS.eval_split))
 		compute_tmis(ana_file_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.ana_mode, tumour_list, FLAGS.eval_split)
 	elif FLAGS.program_mode == "plt":
-		make_plots(ana_file_path, plot_dir_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.eval_split)
+		make_plots(ana_file_path, plot_dir_path, FLAGS.naive_seg_size, FLAGS.drop_zeros, FLAGS.eval_split, FLAGS.ana_mode, tumour_list)
 	else:
 		raise NotImplementedError

@@ -31,6 +31,7 @@ CHRM_LENS = [
 	51304566 
 ]
 
+MB = 1000000
 NUM_CHRMS = len(CHRM_LENS)
 
 INT_T = np.uint32
