@@ -15,6 +15,42 @@ import multiprocessing as mp
 from distutils.util import strtobool
 
 
+BAD_ENTRIES = {
+	'7364a112-61b9-41c6-b85f-18c97c54cefd',
+	'31e63f89-a6a9-40fb-823d-f41587bd73d8',
+	'388a8875-c3f5-494e-8456-28be8d3626e1',
+	'bcf858fd-cc3b-4fde-ab10-eb96216f4366',
+	'ec43c4b5-fb72-4a4a-af03-10c2d05ff159',
+	'711c8a16-3cf8-42d8-b29e-fd1e9ef1c82b',
+	'638e80c7-9a6e-4a32-a621-fc4168e72343',
+	'f4b9d98f-7b76-4eaa-9595-10b0973d5ff7',
+	'af96db5a-684f-41d1-a910-5a5193393d9c',
+	'eae45fbe-9f7d-4f59-a0a9-1f0f0d69afc4',
+	'42de1441-6f3c-4b4d-b8b8-ad91e4b1dbe2',
+	'9fc5b5c7-3973-42b4-8710-454de0cb5b50',
+	'ffb4f42b-58e9-40c3-8963-11804f041375',
+	'accfc45b-eae0-4991-a488-e217cdb46655',
+	'05780d48-80e7-4d70-b00c-081f8a9519f2',
+	'c8e961b4-e324-40a2-89f6-736ec3845bc9',
+	'950486ad-14f8-480a-b079-9cc3cd842090',
+	'b5f90cb8-7304-48fb-a1d3-ff459c7d79d1',
+	'42d20028-0ddc-4dac-9f05-d674f8915f21',
+	'7e305f31-fbb0-4bce-894b-1dd85e303421',
+	'577d5c9e-fbda-41d5-b0b3-cdb733453ea5',
+	'bc395326-1656-4ef2-bb19-0cb29194b91c',
+	'9d2671b9-bd30-4e3c-aa74-01e31dd2531e',
+	'78103d9b-0b8a-431e-bb58-5c99fbea12e4',
+	'2182ce2c-5941-4b65-9419-fc7966d5e6d5',
+	'c082dc34-457e-40ec-8258-e11e8ed362c2',
+	'c6bb32f0-c622-11e3-bf01-24c6515278c0',
+	'1d0617e8-2725-4411-b50f-e46ea1d43242',
+	'bbe59385-5f83-43f6-a485-517c860bef6f',
+	'303abbe5-4155-4a0d-bc3b-f8995261ca52',
+	'3b7810f7-f8ff-4d62-b766-3ba06170194c',
+	'760881cc-c623-11e3-bf01-24c6515278c0'
+}
+
+
 def get_pseudo_median_fn(col_name):
 	""" getter function for accumulating grouped tables by col"""
 	def pseudo_median(grouped_df):
@@ -219,20 +255,25 @@ def preproc(src_dir_path, kat_file_path, donor_file_path, proc_file_path, df_alt
 			proc_results = pickle.load(pkl_file)
 		print(len(proc_results))
 	else:
+		cur_time = time.time()
+		print("[{0:.0f}] processing mutation files".format(cur_time-beg_time))
 		file_paths = []
 		file_count = 0
 		entries = sorted(os.listdir(src_dir_path))
 		for entry in entries:
+			if entry.rstrip(".csv") in BAD_ENTRIES:
+				continue
 			entry_path = os.path.join(src_dir_path,entry)
 			if os.path.isfile(entry_path):
 				file_paths.append(entry_path)
 				file_count += 1
-		assert file_count == len(entries)
+		assert file_count <= len(entries)
+		print("{} files found, {} are valid".format(len(entries),file_count))
 		cur_time = time.time()
-		print("[{0:.0f}] read in donor file".format(cur_time-beg_time))
+		print("[{0:.0f}] reading in donor file".format(cur_time-beg_time))
 		donor_df = read_donor(donor_file_path)
 		cur_time = time.time()
-		print( "[{0:.0f}] read in kataegis file".format(cur_time-beg_time) )
+		print( "[{0:.0f}] reading in kataegis file".format(cur_time-beg_time) )
 		kat_df = read_kataegis(kat_file_path)
 		num_per_proc = [len(file_paths) // num_procs for i in range(num_procs)]
 		for i in range(len(file_paths) % num_procs):
@@ -246,7 +287,7 @@ def preproc(src_dir_path, kat_file_path, donor_file_path, proc_file_path, df_alt
 			running_total += num_per_proc[i]
 		assert running_total == len(file_paths)
 		cur_time = time.time()
-		print( "[{0:.0f}] read in all of the files".format(cur_time-beg_time) )
+		print( "[{0:.0f}] reading in all of the files".format(cur_time-beg_time) )
 		if num_procs > 1:
 			pool = mp.Pool(num_procs)
 			proc_results = pool.map(proc_files_func, proc_inputs)

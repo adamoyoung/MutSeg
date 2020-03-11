@@ -34,6 +34,16 @@ def safelog(val):
 	return np.log(val + chrmlib.EPS)
 
 
+def safelog2(val):
+	""" perform log_2 operation while ensuring numerical stability """
+	return np.log2(val + chrmlib.EPS)
+
+
+def safedivide(x,y):
+	""" perform division while ensuring numerical stability """
+	return x / (y + chrmlib.EPS)
+
+
 def load_seg_results(S_s_file_path, E_f_file_path, mut_array, mut_pos, num_segs, group_by, chrm_len, type_to_idx):
 	"""
 	S_s_file_path: str, path to S_s file
@@ -73,9 +83,9 @@ def load_seg_results(S_s_file_path, E_f_file_path, mut_array, mut_pos, num_segs,
 	# get the acutal bp positions of the segment boundaries
 	seg_bp_bounds = []
 	seg_bp_bounds.append(0)
-	for i in range(len(seg_mut_bounds)-2):
-		beg_pt = mut_pos[seg_mut_bounds[i]][1]
-		end_pt = mut_pos[seg_mut_bounds[i+1]][0]
+	for i in range(1,len(seg_mut_bounds)-1):
+		beg_pt = mut_pos[seg_mut_bounds[i]-1][1]
+		end_pt = mut_pos[seg_mut_bounds[i]][0]
 		seg_bp_bounds.append(median(beg_pt,end_pt))
 	seg_bp_bounds.append(chrm_len)
 	seg_bp_bounds = np.array(seg_bp_bounds, dtype=chrmlib.INT_T)
@@ -123,26 +133,26 @@ def save_seg_results(results_dir_path, mc_dir_path, ana_file_path, naive_seg_siz
 def compute_cmi_from_ints_array(ints_array):
 	""" 
 	compute I(B;T|C) from ints_array
-	the un_ value is the value that hasn't been summed over P(C) yet (for testing purposes only)
+
 	"""
-	total_ints_over_B_and_T = np.sum(ints_array, axis=(1,2))
-	total_ints_over_B = np.sum(ints_array, axis=1)
-	total_ints_over_T = np.sum(ints_array, axis=2)
-	total_ints_over_all = np.sum(ints_array)
-	H_of_T_given_C = - np.sum((total_ints_over_B / total_ints_over_B_and_T[..., np.newaxis]) * safelog(total_ints_over_B / total_ints_over_B_and_T[..., np.newaxis]), axis=1)
-	H_of_B_given_C = - np.sum((total_ints_over_T / total_ints_over_B_and_T[..., np.newaxis]) * safelog(total_ints_over_T / total_ints_over_B_and_T[..., np.newaxis] ), axis=1)
-	H_of_B_and_T_given_C = - np.sum((ints_array / total_ints_over_B_and_T[..., np.newaxis, np.newaxis]) * safelog(ints_array / total_ints_over_B_and_T[..., np.newaxis, np.newaxis] ), axis=(1,2))
-	un_I_of_B_and_T_given_C = H_of_T_given_C + H_of_B_given_C - H_of_B_and_T_given_C
-	P_of_C = total_ints_over_B_and_T / total_ints_over_all
-	I_of_B_and_T_given_C = np.sum(P_of_C * un_I_of_B_and_T_given_C) 
-	# return un_I_of_B_and_T_given_C, I_of_B_and_T_given_C
+	ints_total = np.sum(ints_array)
+	P_of_C_and_B_and_T = ints / ints_total
+	P_of_C = np.sum(P_of_C_and_B_and_T, axis=(1,2))
+	P_of_B_and_T_given_C = np.sum(P_of_C_and_B_and_T, axis=0) / P_of_C[..., np.newaxis, np.newaxis] 
+	P_of_B_given_C = np.sum(P_of_C_and_B_and_T, axis=(0,1)) / P_of_C[..., np.newaxis]
+	P_of_T_given_C = np.sum(P_of_C_and_B_and_T, axis=(0,2)) / P_of_C[..., np.newaxis]
+	H_of_B_given_C = np.sum(P_of_C * ( -np.sum(P_of_B_given_C * safelog(P_of_B_given_C),axis=1) ), axis=0)
+	H_of_T_given_C = np.sum(P_of_C * ( -np.sum(P_of_T_given_C * safelog(P_of_T_given_C),axis=1) ), axis=0)
+	H_of_B_and_T_given_C = np.sum(P_of_C * ( -np.sum(P_of_B_and_T_given_C * safelog(P_of_B_and_T_given_C),axis=(1,2)) ), axis=0)
+	I_of_B_and_T_given_C = H_of_T_given_C + H_of_B_given_C - H_of_B_and_T_given_C
 	cond_vals = {
-		"H_of_B_given_C": np.sum(P_of_C * H_of_B_given_C),
-		"H_of_T_given_C": np.sum(P_of_C * H_of_T_given_C),
-		"H_of_B_and_T_given_C": np.sum(P_of_C * H_of_B_and_T_given_C),
+		"H_of_B_given_C": H_of_B_given_C,
+		"H_of_T_given_C": H_of_T_given_C,
+		"H_of_B_and_T_given_C": H_of_B_and_T_given_C,
 		"I_of_B_and_T_given_C": I_of_B_and_T_given_C
 	}
 	return cond_vals
+
 
 def compute_h_from_ints_array(ints_array):
 	"""
@@ -184,83 +194,62 @@ def compute_cmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 	for c in range(chrmlib.NUM_CHRMS):
 		ints_array[c,:num_segs[c],:] = naive_seg_mut_ints[c]
 	naive_cv = compute_cmi_from_ints_array(ints_array)
+	print(">> naive")
+	print(naive_cv)
+	print(">> optimal")
+	print(optimal_cv)
 	return None
 
 
 def compute_tmi_from_ints_array(ints_array, num_segs):
+
 	# get constants
 	num_chrms = ints_array.shape[0]
 	max_num_segs = ints_array.shape[1]
 	T = ints_array.shape[2]
 	total_num_segs = sum(num_segs)
-	# compute totals
-	total_ints_over_B_and_T = np.sum(ints_array, axis=(1,2))
-	# total_ints_over_C_and_T = np.sum(ints_array, axis=(0,2))
-	total_ints_over_all = np.sum(ints_array)
-	total_ints_over_B = np.sum(ints_array, axis=1)
-	total_ints_over_T = np.sum(ints_array, axis=2)
-	# compute log probabilities
-	P_of_C = total_ints_over_B_and_T / total_ints_over_all
-	P_of_T = np.sum(total_ints_over_B, axis=0) / total_ints_over_all
-	log_P_of_C = safelog(P_of_C)
-	log_P_of_T = safelog(P_of_T)
-	P_of_B_given_C = np.zeros([total_num_segs,num_chrms], dtype=chrmlib.FLOAT_T)
-	prev = 0
+	# get arrays
+	ints_total = np.sum(ints_array)
+	n = int(ints_total)
+	p = total_num_segs*T
+	print(f"n = {n}, p = {p}")
+	ints_B_and_T = np.zeros([total_num_segs,T],dtype=chrmlib.FLOAT_T)
+	assert num_chrms == len(num_segs)
+	cur_num_segs = 0
 	for c in range(num_chrms):
-		for k in range(num_segs[c]):
-			if total_ints_over_B_and_T[c] != 0.:
-				P_of_B_given_C[prev+k,c] = total_ints_over_T[c,k] / total_ints_over_B_and_T[c] 
-		prev += num_segs[c]
-	P_of_B = np.sum(P_of_B_given_C, axis=1)
-	log_P_of_B = safelog(P_of_B)
-	log_P_of_B_given_C = safelog(P_of_B_given_C)
-	# del P_of_B_given_C
-	P_of_T_given_C_and_B = np.zeros([T,num_chrms,total_num_segs], dtype=chrmlib.FLOAT_T)
-	for t in range(T):
-		prev = 0
-		for c in range(num_chrms):
-			for k in range(num_segs[c]):
-				if total_ints_over_T[c,k] != 0.:
-					P_of_T_given_C_and_B[t,c,prev+k] = ints_array[c,k,t] / total_ints_over_T[c,k]
-			prev += num_segs[c]
-	log_P_of_T_given_C_and_B = safelog(P_of_T_given_C_and_B)
-	# del P_of_T_given_C_and_B
-	P_of_C_given_B = np.zeros([num_chrms,total_num_segs], dtype=chrmlib.FLOAT_T)
-	prev = 0
-	for c in range(num_chrms):
-		for k in range(num_segs[c]):
-			P_of_C_given_B[c,prev+k] = 1.
-		prev += num_segs[c]
-	log_P_of_C_given_B = safelog(P_of_C_given_B)
-	# del P_of_C_given_B
-	log_P_of_B = logsumexp(np.reshape(log_P_of_C, [1,num_chrms]) + log_P_of_B_given_C, axis=1)
-	log_P_of_T_given_B = logsumexp(np.reshape(log_P_of_C_given_B, [1,num_chrms,total_num_segs]) + log_P_of_T_given_C_and_B, axis=1)
-	log_P_of_T_given_C = logsumexp(np.reshape(log_P_of_B_given_C.T, [1,num_chrms,total_num_segs]) + log_P_of_T_given_C_and_B, axis=2)
-	log_P_of_C_and_T = ( np.reshape(log_P_of_C, [1,num_chrms]) + log_P_of_T_given_C ).T
-	log_P_of_C_and_B = ( np.reshape(log_P_of_C, [1,num_chrms]) + log_P_of_B_given_C  ).T
-	log_P_of_C_and_B_and_T = ( np.reshape(log_P_of_C, [1,num_chrms,1]) + np.reshape(log_P_of_B_given_C.T, [1,num_chrms,total_num_segs]) + log_P_of_T_given_C_and_B ).transpose([1,0,2])
-	log_P_of_B_and_T = np.reshape(log_P_of_B, [1,total_num_segs]) + log_P_of_T_given_B
-	# compute entropies and informations with the log probabilities
-	cond_vals = compute_cmi_from_ints_array(ints_array)
-	I_of_B_and_T_given_C = cond_vals["I_of_B_and_T_given_C"]
-	H_of_C = - np.sum( P_of_C * log_P_of_C )
-	H_of_C_given_T = np.sum( np.exp(log_P_of_C_and_T) * ( np.reshape(log_P_of_T, [1,T]) - log_P_of_C_and_T ) )
-	H_of_C_given_B = np.sum( np.exp(log_P_of_C_and_B) * ( np.reshape(log_P_of_B, [1,total_num_segs]) - log_P_of_C_and_B ) )
-	H_of_B = - np.sum(P_of_B * log_P_of_B)
-	H_of_T = - np.sum(P_of_T * log_P_of_T)
-	H_of_C_and_B_and_T = - np.sum(np.exp(log_P_of_C_and_B_and_T) * log_P_of_C_and_B_and_T)
-	H_of_B_and_T = - np.sum(np.exp(log_P_of_B_and_T) * log_P_of_B_and_T)
-	H_of_C_given_B_and_T = H_of_C_and_B_and_T - H_of_B_and_T
-
-	I_of_B_and_T = I_of_B_and_T_given_C - H_of_C_given_T - H_of_C_given_B + H_of_C_given_B_and_T + H_of_C
-
-	total_vals = {
-		"H_of_B": H_of_B,
-		"H_of_T": H_of_T,
-		"H_of_B_and_T": H_of_B_and_T,
-		"I_of_B_and_T": I_of_B_and_T
+		ints_B_and_T[cur_num_segs:cur_num_segs+num_segs[c]] = ints_array[c][:num_segs[c]]
+		cur_num_segs += num_segs[c]
+	assert cur_num_segs == total_num_segs
+	mle_P_of_B_and_T = ints_B_and_T / ints_total
+	mle_P_of_T = np.sum(mle_P_of_B_and_T, axis=0) 
+	mle_P_of_B = np.sum(mle_P_of_B_and_T, axis=1)
+	mle_H_of_T = -np.sum(mle_P_of_T * safelog(mle_P_of_T), axis=0)
+	mle_H_of_B = -np.sum(mle_P_of_B * safelog(mle_P_of_B), axis=0)
+	mle_H_of_B_and_T = -np.sum(mle_P_of_B_and_T * safelog(mle_P_of_B_and_T), axis=(0,1))
+	mle_I_of_B_and_T = mle_H_of_B + mle_H_of_T - mle_H_of_B_and_T 
+	mle_total_vals = {
+		"H_of_B": mle_H_of_B,
+		"H_of_T": mle_H_of_T,
+		"H_of_B_and_T": mle_H_of_B_and_T,
+		"I_of_B_and_T": mle_I_of_B_and_T
 	}
-	return total_vals
+	# compute JS information estimates
+	t_B_and_T = 1. / float(p)
+	lambda_B_and_T = (1. - np.sum(mle_P_of_B_and_T**2)) / ((float(n)-1)*np.sum((t_B_and_T-mle_P_of_B_and_T)**2))
+	js_P_of_B_and_T = lambda_B_and_T*t_B_and_T + (1-lambda_B_and_T)*mle_P_of_B_and_T
+	js_P_of_T = np.sum(js_P_of_B_and_T, axis=0) 
+	js_P_of_B = np.sum(js_P_of_B_and_T, axis=1)
+	js_H_of_T = -np.sum(js_P_of_T * safelog(js_P_of_T), axis=0)
+	js_H_of_B = -np.sum(js_P_of_B * safelog(js_P_of_B), axis=0)
+	js_H_of_B_and_T = -np.sum(js_P_of_B_and_T * safelog(js_P_of_B_and_T), axis=(0,1))
+	js_I_of_B_and_T = js_H_of_B + js_H_of_T - js_H_of_B_and_T 
+	js_total_vals = {
+		"H_of_B": js_H_of_B,
+		"H_of_T": js_H_of_T,
+		"H_of_B_and_T": js_H_of_B_and_T,
+		"I_of_B_and_T": js_I_of_B_and_T
+	}
+	return mle_total_vals, js_total_vals
 
 
 def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_list, eval_split):
@@ -299,6 +288,16 @@ def compute_tmis(ana_file_path, naive_seg_size, drop_zeros, ana_mode, tumour_lis
 	for c in range(num_chrms):
 		ints_array[c,:num_segs[c],:] = naive_seg_mut_ints[c]
 	naive_tv = compute_tmi_from_ints_array(ints_array, num_segs)
+	print(">> naive")
+	print("> mle")
+	print(naive_tv[0])
+	print("> js")
+	print(naive_tv[1])
+	print(">> optimal")
+	print("> mle")
+	print(optimal_tv[0])
+	print("> js")
+	print(optimal_tv[1])
 	return None
 
 
@@ -416,6 +415,8 @@ def plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_s
 
 def plot_chrms(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list):
 
+	""" plots naive and optimal segmentations (note zeros are NOT dropped, to keep the naive segments looking nice)"""
+
 	# set plotting settings
 	# requires latex to be installed
 	# sudo apt install texlive-latex-base, texlive-latex-extra, dvipng
@@ -423,90 +424,125 @@ def plot_chrms(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana
 	font_dict = {
 		'family':'sans-serif',
 		'sans-serif':['Computer Modern'],
-		'size': 32
+		'size': 28 #32
 	}
 	mpl.rc('font',**font_dict)
 	mpl.rc('text',usetex=True)
 
 	for c, chrm in enumerate(chrms):
+		
 		print("plotting chrm {}".format(c))
 		chrm_len = chrm.get_chrm_len()
 		chrm_num = chrm.get_chrm_num()
 		assert chrm_num == c+1
-		# get naive
+		
+		# prepare naive
 		naive_seg = chrm.get_naive_seg(naive_seg_size,eval_split)
 		naive_bp_bounds = naive_seg.get_bp_bounds(False)
-		naive_mut_ints = naive_seg.get_mut_ints(False,ana_mode,tumour_list)
-		# get opt
-		opt_num_segs = chrm.get_num_segs(naive_seg_size, drop_zeros, eval_split)
+		naive_ints_t = naive_seg.get_mut_ints(False,ana_mode,tumour_list)
+		naive_bp_sizes = np.array([naive_bp_bounds[i+1] - naive_bp_bounds[i] for i in range(len(naive_bp_bounds)-1)])
+		naive_ints = np.sum(naive_ints_t, axis=1)
+		naive_probs_t = safedivide(naive_ints_t, naive_ints[...,np.newaxis])
+		naive_ents = -np.sum(naive_probs_t * safelog2(naive_probs_t), axis=1)
+		assert np.sum(naive_bp_sizes) == chrm_len
+		
+		# prepare opt
+		opt_num_segs = chrm.get_num_segs(naive_seg_size, False, eval_split)
 		opt_seg = chrm.get_opt_seg(opt_num_segs, eval_split)
 		opt_bp_bounds = opt_seg.get_bp_bounds()
-		opt_mut_ints = opt_seg.get_mut_ints(ana_mode,tumour_list)
-		# prepare data
-		naive_mut_ints = np.sum(naive_mut_ints, axis=1)
-		opt_mut_ints = np.sum(opt_mut_ints, axis=1)
-		max_mut_int = max(np.max(naive_mut_ints), np.max(opt_mut_ints))
-		max_mut_int = int(np.ceil(max_mut_int / 1000.0)*1000.0)
-		naive_mut_colors = np.floor((1. - (naive_mut_ints / max_mut_int))*255.9).astype(np.int)
-		opt_mut_colors = np.floor((1. - (opt_mut_ints / max_mut_int))*255.9).astype(np.int)
-		naive_bp_sizes = np.array([naive_bp_bounds[i+1] - naive_bp_bounds[i] for i in range(len(naive_bp_bounds)-1)])
+		opt_ints_t = opt_seg.get_mut_ints(ana_mode,tumour_list)
 		opt_bp_sizes = np.array([opt_bp_bounds[i+1] - opt_bp_bounds[i] for i in range(len(opt_bp_bounds)-1)])
-		assert np.sum(naive_bp_sizes) == chrm_len
+		opt_ints = np.sum(opt_ints_t, axis=1)
+		opt_probs_t = safedivide(opt_ints_t, opt_ints[...,np.newaxis])
+		opt_ents = -np.sum(opt_probs_t * safelog2(opt_probs_t), axis=1)
 		assert np.sum(opt_bp_sizes) == chrm_len
+		
+		# put them together
+		both_bp_sizes = np.concatenate([naive_bp_sizes[...,np.newaxis],opt_bp_sizes[...,np.newaxis]],axis=1)
+		both_ints = np.concatenate([naive_ints[...,np.newaxis],opt_ints[...,np.newaxis]],axis=1)
+		both_ents = np.concatenate([naive_ents[...,np.newaxis],opt_ents[...,np.newaxis]],axis=1)
+		# assert np.max(both_ents) <= 3., np.max(both_ents)
+		# assert np.min(both_ents) >= 1., np.min(both_ents)
+
+		# set up ints cmap
+		max_int = np.ceil(np.max(both_ints) / 1000.0)*1000.0
+		min_int = np.ceil(np.min(both_ints) / 1000.0)*1000.0
+		print(min_int, max_int)
+		int_cmap = plt.get_cmap("Blues",1000)
+		int_norm = mpl.colors.Normalize(vmin=min_int,vmax=max_int)
+		int_sm = plt.cm.ScalarMappable(cmap=int_cmap, norm=int_norm)
+		both_ints_colors = int_sm.to_rgba(both_ints)
+		
+		# set up ents cmap
+		max_ent = np.max(both_ents)
+		min_ent = np.abs(np.min(both_ents)) # absolute value is to prevent -0.
+		print(min_ent, max_ent)
+		ent_cmap = plt.get_cmap("Reds",1000)
+		ent_norm = mpl.colors.Normalize(vmin=min_ent,vmax=max_ent)
+		ent_sm = plt.cm.ScalarMappable(cmap=ent_cmap, norm=ent_norm)
+		both_ents_colors = ent_sm.to_rgba(both_ents)
+		
 		# get the plot file path
 		assert os.path.isdir(plot_dir_path)
 		plot_dp = os.path.join(plot_dir_path,"chrm_comp")
 		os.makedirs(plot_dp,exist_ok=True)
 		plot_fp = os.path.join(plot_dp,"chrm_comp_{0:02}".format(chrm_num))
-		# create the plot
-		fig, ax = plt.subplots(figsize=[10,10])
-		seg_color1 = "#f4da09" # yellow
-		seg_color2 = "#0000cc" # blue
-		x_pos = [0.5,1.0,1.75,2.25]
+		
+		# set up plot
+		fig, ax = plt.subplots(figsize=(10,10))
+		color1 = "green"
+		color2 = "#000000" # "black"
+		x_pos = [0.5,1.0,1.5,2.25,2.75,3.25]
 		width = 0.40
-		# naive first
-		_ = ax.bar(x_pos[0], naive_bp_sizes[0], width, color=seg_color1)
-		mut_color = "#{0:02x}{0:02x}{0:02x}".format(naive_mut_colors[0])
-		_ = ax.bar(x_pos[1], naive_bp_sizes[0], width, color=mut_color)
-		for i in range(1,len(naive_mut_ints)):
-			prev_seg_size = np.sum(naive_bp_sizes[:i])
-			seg_color = (seg_color1 if i % 2 == 0 else seg_color2)
-			_ = ax.bar(x_pos[0], naive_bp_sizes[i], width, color=seg_color, bottom=prev_seg_size)
-			mut_color = "#{0:02x}{0:02x}{0:02x}".format(naive_mut_colors[i])
-			_ = ax.bar(x_pos[1], naive_bp_sizes[i], width, color=mut_color, bottom=prev_seg_size)
-		# then opt
-		_ = ax.bar(x_pos[2], opt_bp_sizes[0], width, color=seg_color1)
-		mut_color = "#{0:02x}{0:02x}{0:02x}".format(opt_mut_colors[0])
-		_ = ax.bar(x_pos[3], opt_bp_sizes[0], width, color=mut_color)
-		for i in range(1,len(opt_mut_ints)):
-			prev_seg_size = np.sum(opt_bp_sizes[:i])
-			seg_color = (seg_color1 if i % 2 == 0 else seg_color2)
-			_ = ax.bar(x_pos[2], opt_bp_sizes[i], width, color=seg_color, bottom=prev_seg_size)
-			mut_color = "#{0:02x}{0:02x}{0:02x}".format(opt_mut_colors[i])
-			_ = ax.bar(x_pos[3], opt_bp_sizes[i], width, color=mut_color, bottom=prev_seg_size)
-		cmap = plt.get_cmap("gray_r",1000)
-		norm = mpl.colors.Normalize(vmin=0.0,vmax=1.0)
-		sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-		sm.set_array([])
-		cbar = fig.colorbar(sm,boundaries=np.arange(0.0,1.001,0.001))
-		cbar.set_ticks(np.arange(0.0,1.1,0.25))
-		cbar.set_ticklabels(np.arange(0.0,1.1*max_mut_int/1000.0,0.25*max_mut_int/1000.0).astype(np.int))
-		cbar.set_label("Mutation count (thousands)",rotation=270,labelpad=40)
-		ax.set_xticks([np.mean(x_pos[0:2]),np.mean(x_pos[2:4])])
+		
+		# plot bars
+		p_seg_init = ax.bar([x_pos[0],x_pos[3]], both_bp_sizes[0], width, color=color1)
+		p_mut_init = ax.bar([x_pos[1],x_pos[4]], both_bp_sizes[0], width, color=both_ints_colors[0])
+		p_ent_init = ax.bar([x_pos[2],x_pos[5]], both_bp_sizes[0], width, color=both_ents_colors[0])
+		for i in range(1,len(opt_bp_sizes)):
+			seg_color = (color1 if i % 2 == 0 else color2)
+			p_seg = ax.bar([x_pos[0],x_pos[3]], both_bp_sizes[i], width, color=seg_color, bottom=np.sum(both_bp_sizes[:i],axis=0))
+			int_colors = both_ints_colors[i]
+			p_mut = ax.bar([x_pos[1],x_pos[4]], both_bp_sizes[i], width, color=int_colors, bottom=np.sum(both_bp_sizes[:i],axis=0))
+			ent_colors = both_ents_colors[i]
+			p_ent = ax.bar([x_pos[2],x_pos[5]], both_bp_sizes[i], width, color=ent_colors, bottom=np.sum(both_bp_sizes[:i],axis=0))
+		
+		# add int colorbar
+		int_sm.set_array([])
+		cbaxes = fig.add_axes([0.9, 0.15, 0.03, 0.3]) 
+		int_cbar_bounds = np.linspace(min_int,max_int,1000).astype(np.int)
+		int_cbar = plt.colorbar(ax=ax, mappable=int_sm, cax=cbaxes, boundaries=int_cbar_bounds)
+		int_cbar.set_ticks(np.linspace(min_int,max_int,5).astype(np.int))
+		int_cbar.set_ticklabels([f"{i}k" for i in np.linspace(min_int/1000,max_int/1000,5).astype(np.int)])
+		int_cbar.set_label("Muts (count)",rotation=270,labelpad=30)
+		
+		# add ent colorbar
+		ent_sm.set_array([])
+		cbaxes = fig.add_axes([0.9, 0.525, 0.03, 0.3])
+		ent_cbar_bounds = np.linspace(min_ent,max_ent,1000)
+		ent_cbar = plt.colorbar(ax=ax, mappable=ent_sm, cax=cbaxes, boundaries=ent_cbar_bounds)
+		ent_cbar.set_ticks(np.linspace(min_ent,max_ent,5))
+		ent_cbar.set_ticklabels(np.around(np.linspace(min_ent,max_ent,5),decimals=1))
+		ent_cbar.set_label("Entropies (bits)",rotation=270,labelpad=35)
+		
+		# format axes labels
+		ax.set_xticks([np.mean(x_pos[:3]),np.mean(x_pos[3:])])
 		ax.set_xticklabels(['Naive', 'Optimal'])
-		ax.set_xlim(0.0,x_pos[3]+0.5)
-		ax.tick_params(axis='x', pad=10)
-		max_tick = int(np.around(chrm_len,decimals=-6)) #int(np.ceil(chrm_len / (20*chrmlib.MB))*(20*chrmlib.MB))
-		ax.set_yticks(np.arange(0, max_tick+1, 20*chrmlib.MB))
-		ax.set_yticklabels(np.arange(0, int(np.floor(max_tick / chrmlib.MB))+1, 20))
+		ax.set_xlim(0.0,x_pos[-1]+0.5)
+		ax.tick_params(axis='x', pad=10, length=0)
+		max_tick = np.around(chrm_len, decimals=-7)
+		ax.set_yticks(np.arange(0, max_tick+1, 20000000))
+		ax.set_ylim(0,chrm_len+1)
+		ax.set_yticklabels(np.arange(0, int(np.floor(max_tick / 1000000))+1, 20))
 		ax.set_ylabel("Position (Mb)",labelpad=20)
-		# fig.suptitle("Chromosome {}".format(chrm_num),y=0.95)
-		plt.tight_layout()
-		plt.savefig(plot_fp+".pdf",format="pdf")
-		plt.savefig(plot_fp+".png",format="png")
-		plt.close()
-		# quit()
+		ax.spines["top"].set_visible(False)
+		ax.spines["bottom"].set_visible(False)
+		ax.spines["right"].set_visible(False)
 
+		# save plot
+		plt.savefig(plot_fp+".pdf",bbox_inches="tight",format="pdf")
+		plt.savefig(plot_fp+".png",bbox_inches="tight",format="png")
+		plt.clf()
 
 def make_plots(ana_file_path, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list):
 	
@@ -575,11 +611,12 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--run_dir_path", type=str, default="runs_both_red/90_1.0/co", help="path to directory that holds: ana file (after seg), results dir, plots dir")
 	parser.add_argument("--results_dir_name", type=str, default="results", help="name of directory with S_s, E_f, and E_s files")
-	parser.add_argument("--mc_dir_path", type=str, default="mc_data_both", help="path to chromosome data .pkl file, read-only")
+	parser.add_argument("--mc_dir_path", type=str, default="mc_data", help="path to chromosome data .pkl file, read-only")
 	parser.add_argument("--ana_file_name", type=str, default="ana_data.pkl", help="name of analysis data .pkl file")
 	parser.add_argument("--naive_seg_size", type=int, default=1000000, help="size of segments in naive segmentation (in bp)")
-	parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "plt", "seg", "cmi"], default="seg")
-	parser.add_argument("--data_type", type=str, choices=["normal", "alt"], default="normal")
+	parser.add_argument("--program_mode", type=str, choices=["seg", "cmi", "tmi", "plt"], default="seg")
+	parser.add_argument("--train_data_type", type=str, choices=["normal", "both"], default="both")
+	parser.add_argument("--eval_data_type", type=str, choices=["same", "alt"], default="same")
 	parser.add_argument("--drop_zeros", type=lambda x:bool(strtobool(x)), default=True)
 	parser.add_argument("--plot_dir_name", type=str, default="plots", help="only useful in \'plt\' mode")
 	parser.add_argument("--ana_mode", type=str, choices=["sample_freqs", "counts", "tumour_freqs"], default="counts")
@@ -595,24 +632,26 @@ if __name__ == "__main__":
 	mc_dir_path = FLAGS.mc_dir_path
 	ana_file_path = os.path.join(FLAGS.run_dir_path,FLAGS.ana_file_name)
 	plot_dir_path = os.path.join(FLAGS.run_dir_path,FLAGS.plot_dir_name)
-	if FLAGS.data_type == "alt": # interpet the alt data for the mutations
+	if FLAGS.eval_data_type == "alt": # interpet the alt data for the mutations
 		mc_alt_dir_path = mc_dir_path + "_alt"
 		ana_file_path = ana_file_path.rstrip(".pkl") + "_alt.pkl"
 		plot_dir_path += "_alt"
+	if FLAGS.train_data_type == "both":
+		mc_dir_path = mc_dir_path + "_both"
 	if FLAGS.tumour_set == "all":
 		tumour_list = sorted(chrmlib.ALL_SET)
 	else: # FLAGS.tumour_set == "reduced"
 		tumour_list = sorted(chrmlib.REDUCED_SET)
-	if FLAGS.train_split != "all":
-		assert FLAGS.data_type == "normal"
+	# if FLAGS.train_split != "all":
+	# 	assert FLAGS.data_type == "normal" or FLAGS.data_type == "both"
 	ana_file_path = ana_file_path.rstrip(".pkl") + "_{}.pkl".format(FLAGS.train_split)
 
 	if FLAGS.program_mode == "seg":
 		# interpret segmentation results and save them in a file of chromosomes
 		# does not care about drop_zeros since it automatically computes results for both kinds
-		if FLAGS.data_type == "normal":
+		if FLAGS.eval_data_type == "same":
 			save_seg_results(results_dir_path, mc_dir_path, ana_file_path, FLAGS.naive_seg_size)
-		elif FLAGS.data_type == "alt":
+		elif FLAGS.eval_data_type == "alt":
 			save_alt_seg_results(results_dir_path, mc_dir_path, mc_alt_dir_path, ana_file_path, FLAGS.naive_seg_size)
 		else:
 			raise NotImplementedError
