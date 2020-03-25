@@ -135,15 +135,20 @@ def compute_cmi_from_ints_array(ints_array):
 	compute I(B;T|C) from ints_array
 
 	"""
-	ints_total = np.sum(ints_array)
-	P_of_C_and_B_and_T = ints / ints_total
-	P_of_C = np.sum(P_of_C_and_B_and_T, axis=(1,2))
-	P_of_B_and_T_given_C = np.sum(P_of_C_and_B_and_T, axis=0) / P_of_C[..., np.newaxis, np.newaxis] 
-	P_of_B_given_C = np.sum(P_of_C_and_B_and_T, axis=(0,1)) / P_of_C[..., np.newaxis]
-	P_of_T_given_C = np.sum(P_of_C_and_B_and_T, axis=(0,2)) / P_of_C[..., np.newaxis]
-	H_of_B_given_C = np.sum(P_of_C * ( -np.sum(P_of_B_given_C * safelog(P_of_B_given_C),axis=1) ), axis=0)
-	H_of_T_given_C = np.sum(P_of_C * ( -np.sum(P_of_T_given_C * safelog(P_of_T_given_C),axis=1) ), axis=0)
-	H_of_B_and_T_given_C = np.sum(P_of_C * ( -np.sum(P_of_B_and_T_given_C * safelog(P_of_B_and_T_given_C),axis=(1,2)) ), axis=0)
+	total_ints_over_B_and_T = np.sum(ints_array, axis=(1,2))
+	total_ints_over_B = np.sum(ints_array, axis=1)
+	total_ints_over_T = np.sum(ints_array, axis=2)
+	total_ints_over_all = np.sum(ints_array)
+	P_of_C = total_ints_over_B_and_T / total_ints_over_all
+	P_of_T_given_C = total_ints_over_B / total_ints_over_B_and_T[..., np.newaxis]
+	P_of_B_given_C = total_ints_over_T / total_ints_over_B_and_T[..., np.newaxis]
+	P_of_B_and_T_given_C = ints_array / total_ints_over_B_and_T[..., np.newaxis, np.newaxis]
+	H_of_T_given_C = - np.sum(P_of_C * np.sum(P_of_T_given_C * safelog(P_of_T_given_C), axis=1), axis=0)
+	H_of_B_given_C = - np.sum(P_of_C * np.sum(P_of_B_given_C * safelog(P_of_B_given_C), axis=1), axis=0)
+	H_of_B_and_T_given_C = - np.sum(P_of_C * np.sum(P_of_B_and_T_given_C * safelog(P_of_B_and_T_given_C), axis=(1,2)), axis=0)
+	# un_I_of_B_and_T_given_C = H_of_T_given_C + H_of_B_given_C - H_of_B_and_T_given_C
+	# I_of_B_and_T_given_C = np.sum(P_of_C * un_I_of_B_and_T_given_C) 
+	# return un_I_of_B_and_T_given_C, I_of_B_and_T_given_C
 	I_of_B_and_T_given_C = H_of_T_given_C + H_of_B_given_C - H_of_B_and_T_given_C
 	cond_vals = {
 		"H_of_B_given_C": H_of_B_given_C,
@@ -335,65 +340,74 @@ def plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
 		plt_name += "_z"
 	plt_name += "_{}".format(eval_split)
 	ax.set(
-		xlabel="genomic length of segment (Mb)",
+		xlabel="genomic size of segment (Mb)",
 		ylabel="counts",
 		xlim=[-0.1,5],
+		ylim=[0,300],
 		# title=plt_name
 	)
 	ax.legend()
 	# ax.text(0.75, 0.85, f"total = {sum(num_segs)}", fontsize=10, transform=ax.transAxes)
 	plt_path = os.path.join(plot_dir_path,plt_name)
-	plt.savefig(plt_path)
+	plt.savefig(plt_path+".png",format="png")
+	plt.savefig(plt_path+".pdf",format="pdf")
 	plt.clf()
 
 
-def plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split):
-	""" plot the number of distinct mutation positions in each segment """
+def get_opt_naive_mut_ints_t(chrms, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list):
 
 	num_segs = [chrm.get_num_segs(naive_seg_size, drop_zeros, eval_split) for chrm in chrms]
-	seg_mut_counts = np.zeros([2,sum(num_segs)], dtype=chrmlib.INT_T)
-	# get opt mutation counts - can be grouped
+	seg_mut_ints_t = np.zeros([2,sum(num_segs),len(tumour_list)], dtype=chrmlib.INT_T)
+	# get opt mutation ints - can be grouped
 	opt_segs = [chrms[c].get_opt_seg(num_segs[c], eval_split) for c in range(len(chrms))]
 	cur_seg_idx = 0
 	for c in range(len(chrms)):
-		seg_mut_bounds = opt_segs[c].get_mut_bounds()
-		assert len(seg_mut_bounds) == num_segs[c]+1
-		for s in range(num_segs[c]):
-			start_idx, end_idx = seg_mut_bounds[s], seg_mut_bounds[s+1]
-			seg_mut_counts[0][cur_seg_idx+s] = np.sum(chrms[c].num_mut_pos_g[start_idx:end_idx])
+		cur_seg_mut_ints_t = opt_segs[c].get_mut_ints(ana_mode, tumour_list)
+		seg_mut_ints_t[0,cur_seg_idx:cur_seg_idx+num_segs[c]] = cur_seg_mut_ints_t[:num_segs[c]]
 		cur_seg_idx += num_segs[c]
-	assert cur_seg_idx == seg_mut_counts.shape[1]
-	# get naive mutation counts - never grouped
+	assert cur_seg_idx == np.sum(num_segs)
+	# get naive mutation ints - never grouped
 	naive_segs = [chrm.get_naive_seg(naive_seg_size, eval_split) for chrm in chrms]
 	cur_seg_idx = 0
 	for c in range(len(chrms)):
-		seg_mut_bounds = naive_segs[c].get_mut_bounds(drop_zeros)
-		assert len(seg_mut_bounds) == num_segs[c]+1
-		for s in range(num_segs[c]):
-			start_idx, end_idx = seg_mut_bounds[s], seg_mut_bounds[s+1]
-			seg_mut_counts[1][cur_seg_idx+s] = end_idx - start_idx
+		cur_seg_mut_ints_t = naive_segs[c].get_mut_ints(drop_zeros,ana_mode,tumour_list)
+		seg_mut_ints_t[1,cur_seg_idx:cur_seg_idx+num_segs[c]] = cur_seg_mut_ints_t[:num_segs[c]]
 		cur_seg_idx += num_segs[c]
-	assert cur_seg_idx == seg_mut_counts.shape[1]
+	assert cur_seg_idx == np.sum(num_segs)
+	return seg_mut_ints_t
+
+
+def plot_opt_naive_mut_ints_and_ents(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list):
+	""" plot the number of distinct mutation positions in each segment """
+
+	seg_mut_ints_t = get_opt_naive_mut_ints_t(chrms, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list)
+	# compute the results
+	seg_mut_ints = np.sum(seg_mut_ints_t,axis=2)
+	assert np.sum(seg_mut_ints[0]) == np.sum(seg_mut_ints[1]), np.sum(seg_mut_ints,axis=1)
+	seg_mut_probs_t = safedivide(seg_mut_ints_t, seg_mut_ints[...,np.newaxis])
+	seg_mut_ents = -np.sum(seg_mut_probs_t * safelog2(seg_mut_probs_t), axis=2)
+	assert seg_mut_ints.shape == seg_mut_ents.shape
 	# plot the results
-	print(">>> plot number of muts")
-	assert np.sum(seg_mut_counts[0]) == np.sum(seg_mut_counts[1]), np.sum(seg_mut_counts,axis=1)
+	print(">>> plot mutation count")
 	seg_types = ["opt", "naive"]
+	num_bins = 50
+	bins = np.linspace(int(np.min(seg_mut_ints)),100000,num_bins)
 	for i in range(len(seg_types)):
 		print(seg_types[i])
-		min_seg_mut_counts = int(np.min(seg_mut_counts[i]))
-		max_seg_mut_counts = int(np.max(seg_mut_counts[i]))
-		mean_seg_mut_counts = int(np.mean(seg_mut_counts[i]))
-		median_seg_mut_counts = int(np.median(seg_mut_counts[i]))
-		print("min = {}, max = {}, mean = {}, median = {}".format(min_seg_mut_counts, max_seg_mut_counts, mean_seg_mut_counts, median_seg_mut_counts))
+		min_seg_mut_ints = int(np.min(seg_mut_ints[i]))
+		max_seg_mut_ints = int(np.max(seg_mut_ints[i]))
+		mean_seg_mut_ints = int(np.mean(seg_mut_ints[i]))
+		median_seg_mut_ints = int(np.median(seg_mut_ints[i]))
+		print("min = {}, max = {}, mean = {}, median = {}".format(min_seg_mut_ints, max_seg_mut_ints, mean_seg_mut_ints, median_seg_mut_ints))
 		ax = sns.distplot(
-			seg_mut_counts[i],
+			seg_mut_ints[i],
 			kde=False,
 			norm_hist=False,
-			# bins=500,
-			bins=[i for i in range(0,81000,1000)],
+			bins=bins,
+			# bins=[i for i in range(0,81000,1000)],
 			label=seg_types[i]
 		)
-	plt_name = "opt_vs_naive_seg_mut_counts"
+	plt_name = "opt_vs_naive_seg_mut_ints"
 	if drop_zeros:
 		plt_name += "_nz"
 	else:
@@ -403,13 +417,52 @@ def plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_s
 		xlabel="number of mutations in segment",
 		ylabel="counts",
 		# xlim=[-1000,81000],
-		xlim=[-1000,81000],
-		ylim=[0,300],
+		# xlim=[-1000,81000],
+		# ylim=[0,300],
 		# title=plt_name
 	)
 	ax.legend()
 	plt_path = os.path.join(plot_dir_path,plt_name)
-	plt.savefig(plt_path)
+	plt.savefig(plt_path+".png",format="png")
+	plt.savefig(plt_path+".pdf",format="pdf")
+	plt.clf()
+	print(">>> plot entropy")
+	seg_types = ["opt", "naive"]
+	num_bins = 50
+	bins = np.linspace(np.floor(np.min(seg_mut_ents)),np.ceil(np.max(seg_mut_ents)),num_bins)
+	for i in range(len(seg_types)):
+		print(seg_types[i])
+		min_seg_mut_ents = np.min(seg_mut_ents[i])
+		max_seg_mut_ents = np.max(seg_mut_ents[i])
+		mean_seg_mut_ents = np.mean(seg_mut_ents[i])
+		median_seg_mut_ents = np.median(seg_mut_ents[i])
+		print("min = {}, max = {}, mean = {}, median = {}".format(min_seg_mut_ents, max_seg_mut_ents, mean_seg_mut_ents, median_seg_mut_ents))
+		ax = sns.distplot(
+			seg_mut_ents[i],
+			kde=False,
+			norm_hist=False,
+			bins=bins,
+			# bins=[i for i in range(0,81000,1000)],
+			label=seg_types[i]
+		)
+	plt_name = "opt_vs_naive_seg_mut_ents"
+	if drop_zeros:
+		plt_name += "_nz"
+	else:
+		plt_name += "_z"
+	plt_name += "_{}".format(eval_split)
+	ax.set(
+		xlabel="conditional tumour entropy in segment (bits)",
+		ylabel="counts",
+		# xlim=[-1000,81000],
+		# xlim=[-1000,81000],
+		# ylim=[0,300],
+		# title=plt_name
+	)
+	ax.legend()
+	plt_path = os.path.join(plot_dir_path,plt_name)
+	plt.savefig(plt_path+".png",format="png")
+	plt.savefig(plt_path+".pdf",format="pdf")
 	plt.clf()
 
 
@@ -429,9 +482,12 @@ def plot_chrms(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana
 	mpl.rc('font',**font_dict)
 	mpl.rc('text',usetex=True)
 
+	num_mut_pos_g = []
+
 	for c, chrm in enumerate(chrms):
 		
 		print("plotting chrm {}".format(c))
+		num_mut_pos_g.append(np.sum(chrm.num_mut_pos_g))
 		chrm_len = chrm.get_chrm_len()
 		chrm_num = chrm.get_chrm_num()
 		assert chrm_num == c+1
@@ -544,15 +600,106 @@ def plot_chrms(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana
 		plt.savefig(plot_fp+".png",bbox_inches="tight",format="png")
 		plt.clf()
 
+	print(num_mut_pos_g)
+	print(np.sum(num_mut_pos_g))
+
+
+def plot_seg_dists(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list):
+
+	font_dict = {
+		'family':'sans-serif',
+		'sans-serif':['Computer Modern'],
+		'size': 28 #32
+	}
+	mpl.rc('font',**font_dict)
+	mpl.rc('text',usetex=True)
+
+	seg_dists_dp = os.path.join(plot_dir_path,"seg_dists")
+	os.makedirs(seg_dists_dp, exist_ok=True)
+	naive_df_rows = []
+	opt_df_rows = []
+	total_ints_t = np.zeros(len(tumour_list), dtype=chrmlib.FLOAT_T)
+	tumour_idx = np.arange(len(tumour_list))
+
+	for c, chrm in enumerate(chrms):
+
+		print("chrm {}".format(c))
+		# chrm_seg_dists_fp = os.path.join(seg_dists_dp, "chrm_{}.csv".format(c+1))
+		# chrm_seg_dists_file = open(chrm_seg_dists_fp, "w")
+		
+		# prepare naive
+		naive_seg = chrm.get_naive_seg(naive_seg_size,eval_split)
+		naive_ints_t = naive_seg.get_mut_ints(False,ana_mode,tumour_list)
+		# naive_ints = np.sum(naive_ints_t, axis=1)
+		# naive_probs_t = safedivide(naive_ints_t, naive_ints[...,np.newaxis])
+		naive_num_segs = naive_ints_t.shape[0]
+
+		# prepare opt
+		opt_num_segs = chrm.get_num_segs(naive_seg_size, False, eval_split)
+		opt_seg = chrm.get_opt_seg(opt_num_segs, eval_split)
+		opt_ints_t = opt_seg.get_mut_ints(ana_mode,tumour_list)
+		# opt_ints = np.sum(opt_ints_t, axis=1)
+		# opt_probs_t = safedivide(opt_ints_t, opt_ints[...,np.newaxis])
+
+		assert naive_num_segs == opt_num_segs, (naive_num_segs,opt_num_segs)
+		assert np.sum(opt_ints_t) == np.sum(naive_ints_t)
+		total_ints_t += np.sum(opt_ints_t,axis=0)
+
+		seg_idx = np.arange(naive_num_segs, dtype=np.int)[...,np.newaxis]
+		chrm_num = (c+1)*np.ones(naive_num_segs, dtype=np.int)[...,np.newaxis]
+		naive_rows = np.concatenate([chrm_num,seg_idx,naive_ints_t.astype(np.int)], axis=1).tolist()
+		opt_rows = np.concatenate([chrm_num,seg_idx,opt_ints_t.astype(np.int)], axis=1).tolist()
+
+		naive_df_rows.extend(naive_rows)
+		opt_df_rows.extend(opt_rows)
+
+		plt.bar(tumour_idx, np.sum(opt_ints_t,axis=0))
+		plt.xticks(tumour_idx, tumour_list, rotation=90, fontsize=16)
+		plt.ylabel("Mutation count")
+		plt.xlabel("Cancer type")
+		chrm_fp = os.path.join(seg_dists_dp,"total_chrm_{}".format(c+1))
+		plt.savefig(chrm_fp+".png",bbox_inches="tight",format="png")
+		plt.clf()
+
+		chrm_dp = os.path.join(seg_dists_dp,"chrm_{}".format(c+1))
+		os.makedirs(chrm_dp, exist_ok=True)
+		for s in range(opt_num_segs):
+			plt.bar(tumour_idx, opt_ints_t[s], align="center")
+			plt.xticks(tumour_idx, tumour_list, rotation=90, fontsize=16)
+			plt.ylabel("Mutation count")
+			plt.xlabel("Cancer type")
+			seg_fp = os.path.join(chrm_dp,"opt_seg_{}".format(s))
+			plt.savefig(seg_fp+".png",bbox_inches="tight",format="png")
+			plt.clf()
+
+	plt.bar(tumour_idx, total_ints_t)
+	plt.xticks(tumour_idx, tumour_list, rotation=90, fontsize=16)
+	plt.ylabel("Mutation count")
+	plt.xlabel("Cancer type")
+	total_fp = os.path.join(seg_dists_dp,"total")
+	plt.savefig(total_fp+".png",bbox_inches="tight",format="png")
+	plt.clf()
+
+	col_names = ["chrm", "seg"] + tumour_list
+	naive_df = pd.DataFrame(naive_df_rows, columns=col_names)
+	opt_df = pd.DataFrame(opt_df_rows, columns=col_names)
+	naive_fp = os.path.join(seg_dists_dp, "naive_seg_dists.csv")
+	opt_fp = os.path.join(seg_dists_dp, "opt_seg_dists.csv")
+	naive_df.to_csv(naive_fp, header=True, sep=",")
+	opt_df.to_csv(opt_fp, header=True, sep=",")
+
+
 def make_plots(ana_file_path, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list):
 	
 	assert os.path.isfile(ana_file_path), ana_file_path
 	os.makedirs(plot_dir_path, exist_ok=True)
 	with open(ana_file_path, "rb") as pkl_file:
 		chrms = pickle.load(pkl_file)
-	#plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
-	#plot_opt_naive_muts(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
-	plot_chrms(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list)
+	print(plot_dir_path)
+	# plot_opt_sizes(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split)
+	# plot_opt_naive_mut_ints_and_ents(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list)
+	# plot_chrms(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list)
+	plot_seg_dists(chrms, plot_dir_path, naive_seg_size, drop_zeros, eval_split, ana_mode, tumour_list)
 
 
 def get_opt_seg_from_bp_bounds(mut_ints, mut_pos, num_segs, bp_bounds, type_to_idx):
